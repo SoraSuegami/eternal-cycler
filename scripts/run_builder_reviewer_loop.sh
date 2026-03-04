@@ -657,7 +657,7 @@ SUBMODULE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SUBMODULE_REL="$(realpath --relative-to="$WORKDIR" "$SUBMODULE_ROOT")"
 
 # Explicit path context injected into every agent prompt.
-# All relative paths in AGENTS.md / PLANS.md / REVIEW.md are relative to SUBMODULE_REL,
+# All relative paths in PLANS.md / REVIEW.md are relative to SUBMODULE_REL,
 # not the repository root. This block makes those paths unambiguous for the agent.
 PATH_CONTEXT="Path context (all paths are from the repository root):
 - Policy docs:           ${SUBMODULE_REL}/PLANS.md, ${SUBMODULE_REL}/REVIEW.md

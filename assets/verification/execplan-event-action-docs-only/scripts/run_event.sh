@@ -38,7 +38,7 @@ mapfile -t paths < <({
 
 for path in "${paths[@]}"; do
   case "$path" in
-    assets/*|*.md|AGENTS.md|PLANS.md|REVIEW.md)
+    assets/*|*.md|PLANS.md|REVIEW.md)
       ;;
     *)
       echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"

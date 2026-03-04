@@ -66,7 +66,12 @@ Reviewer must not block output on CI completion; if CI is still running, reviewe
 - Committing or pushing local changes is forbidden in reviewer mode.
 - Remote write actions are forbidden; return JSON payload only.
 
+## Global Requirements
+
+- All review comments and PR comment bodies must be written in English.
+- When referencing file paths, use only paths relative to the repository top directory.
+
 ## Maintenance rule
 
-This document is long-lived and must stay consistent with repository verification policy and CI behavior.  
+This document is long-lived and must stay consistent with repository verification policy and CI behavior.
 If reviewer policy changes, update this document in the same change set.
