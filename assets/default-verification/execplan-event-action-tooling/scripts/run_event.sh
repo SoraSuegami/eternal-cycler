@@ -2,11 +2,9 @@
 set -euo pipefail
 
 # ETERNAL_CYCLER_ROOT and REPO_ROOT are exported by execplan_gate.sh before calling this script.
-# Fall back to relative resolution if invoked directly (e.g. during testing).
-# When deployed to .agents/skills/execplan-event-action-tooling/scripts/, two levels up lands in
-# .agents/skills/ and then we step into eternal-cycler/.
-ETERNAL_CYCLER_ROOT="${ETERNAL_CYCLER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../eternal-cycler" && pwd)}"
+# Fall back to repo-local resolution if invoked directly (e.g. during testing).
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+ETERNAL_CYCLER_ROOT="${ETERNAL_CYCLER_ROOT:-${REPO_ROOT}/.agents/skills/eternal-cycler}"
 
 PLAN=""
 while [[ $# -gt 0 ]]; do
@@ -33,6 +31,13 @@ if [[ -z "$PLAN" || ! -f "$PLAN" ]]; then
   exit 1
 fi
 
+if [[ ! -d "${ETERNAL_CYCLER_ROOT}/scripts" ]]; then
+  echo "COMMANDS=none"
+  echo "FAILURE_SUMMARY=eternal-cycler root not found: ${ETERNAL_CYCLER_ROOT}"
+  echo "STATUS=fail"
+  exit 1
+fi
+
 commands="bash -n ${ETERNAL_CYCLER_ROOT}/scripts/*.sh ${REPO_ROOT}/.agents/skills/execplan-event-*/scripts/*.sh"
 
 if ! bash -n "${ETERNAL_CYCLER_ROOT}"/scripts/*.sh "${REPO_ROOT}"/.agents/skills/execplan-event-*/scripts/*.sh; then
@@ -45,4 +50,3 @@ fi
 echo "COMMANDS=$commands"
 echo "FAILURE_SUMMARY=none"
 echo "STATUS=pass"
-
