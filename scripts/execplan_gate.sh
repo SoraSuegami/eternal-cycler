@@ -182,12 +182,13 @@ ledger_lines() {
 
 count_attempts() {
   local event_id="$1"
-  ledger_lines | rg -c "event_id=${event_id};" || true
+  ledger_lines | rg -cF "event_id=${event_id};" || true
 }
 
 has_pass() {
   local event_id="$1"
-  ledger_lines | rg -q "event_id=${event_id};.*status=pass"
+  local escaped="${event_id//./\\.}"
+  ledger_lines | rg -q "event_id=${escaped};.*status=pass"
 }
 
 has_non_lifecycle_pass() {
