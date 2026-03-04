@@ -56,6 +56,8 @@ if command -v gh >/dev/null 2>&1; then
 fi
 
 tracking_path="${EXECPLAN_PR_TRACKING_PATH:-${REPO_ROOT}/eternal-cycler-out/prs/active/pr_${branch//\//_}.md}"
+# Repo-relative version for writing into the plan document (policy: no absolute paths in docs).
+tracking_path_rel="${tracking_path#"${REPO_ROOT}/"}"
 commands+=("mkdir -p $(dirname "$tracking_path")")
 mkdir -p "$(dirname "$tracking_path")"
 
@@ -88,13 +90,13 @@ cat > "$tracking_path" <<EOF
 - PR head/base: ${pr_head} -> ${pr_base}
 EOF
 
-if ! rg -q "$tracking_path" "$PLAN"; then
+if ! rg -q "$tracking_path_rel" "$PLAN"; then
   commands+=("append PR Tracking Linkage to plan")
   cat >> "$PLAN" <<EOF
 
 ## PR Tracking Linkage
 
-- pr_tracking_doc: ${tracking_path}
+- pr_tracking_doc: ${tracking_path_rel}
 - execplan_start_branch: ${branch}
 - execplan_start_commit: ${creation_commit}
 EOF

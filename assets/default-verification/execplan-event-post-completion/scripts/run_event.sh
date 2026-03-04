@@ -54,7 +54,7 @@ emit_fail() {
 to_plan_style_path() {
   local rel="$1"
   if [[ "$plan_is_abs" -eq 1 ]]; then
-    printf "%s/%s" "$PWD" "$rel"
+    printf "%s/%s" "$REPO_ROOT" "$rel"
   else
     printf "%s" "$rel"
   fi
@@ -159,8 +159,11 @@ if [[ -z "$pr_doc_path" ]]; then
   fail_validation "missing PR tracking document linkage in plan"
 fi
 
-if [[ ! -f "$pr_doc_path" && "$pr_doc_path" == eternal-cycler-out/prs/active/* ]]; then
-  fallback_path="eternal-cycler-out/prs/completed/$(basename "$pr_doc_path")"
+# Resolve to absolute path for file tests (plan may record repo-relative paths).
+[[ "$pr_doc_path" == /* ]] || pr_doc_path="${REPO_ROOT}/${pr_doc_path}"
+
+if [[ ! -f "$pr_doc_path" && "$pr_doc_path" == */eternal-cycler-out/prs/active/* ]]; then
+  fallback_path="${REPO_ROOT}/eternal-cycler-out/prs/completed/$(basename "$pr_doc_path")"
   if [[ -f "$fallback_path" ]]; then
     commands+=("fallback pr doc $pr_doc_path -> $fallback_path")
     pr_doc_path="$fallback_path"
