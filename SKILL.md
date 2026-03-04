@@ -42,8 +42,7 @@ All paths are relative to this SKILL.md file's location (the eternal-cycler inst
      - If state is `OPEN`: pass `--pr-url <that_link>` to the loop.
      - If state is `MERGED` or `CLOSED`: do not pass `--pr-url` (a new PR will be created on the current branch by the loop).
    - If `PR link` is missing or `pr_tracking_doc` is absent from the plan: do not pass `--pr-url`.
-9. Run the resume gate: `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
-10. Compose the task for the builder agent:
+9. Compose the task for the builder agent:
     - Prepend the following to whatever task text the user provided:
       ```
       You are resuming the ExecPlan at <plan_md>. Read that document in full before taking any action.
@@ -56,25 +55,23 @@ All paths are relative to this SKILL.md file's location (the eternal-cycler inst
       Follow the ExecPlan lifecycle from PLANS.md, starting at step 3 (execute actions).
       ```
     - Pass the composed task as `--task <text>` (or write it to a temp file and use `--task-file`).
-11. Run doctor before loop using the same resolved target (`--pr-url` if determined in step 8, otherwise `--head-branch <current_branch_after_switch>`).
-12. Invoke the loop. Forward loop output directly to caller stdout/stderr.
+10. Run doctor before loop using the same resolved target (`--pr-url` if determined in step 8, otherwise `--head-branch <current_branch_after_switch>`).
+11. Invoke the loop. Forward loop output directly to caller stdout/stderr.
 
 ### New plan flow
 
-13. Run the pre-creation gate: `scripts/execplan_gate.sh --event execplan.pre_creation`
-14. Resolve task input: if task text or task file is not provided, stop and ask. Do not create a fallback task.
-15. Never invoke the loop script without `--task` or `--task-file`.
-16. If `--pr-url` is already provided by the user, pass it through unchanged and skip steps 17–19.
-17. Inspect `eternal-cycler-out/prs/active/*.md` regardless of current local branch:
+12. Resolve task input: if task text or task file is not provided, stop and ask. Do not create a fallback task. Never invoke the loop script without `--task` or `--task-file`.
+13. If `--pr-url` is already provided by the user, pass it through unchanged and skip steps 14–16.
+14. Inspect `eternal-cycler-out/prs/active/*.md` regardless of current local branch:
     - If one or more active docs exist, ask whether to resume an existing tracked PR or create a new PR flow.
     - If multiple active docs exist and user chooses resume, show a numbered list and ask which doc to use.
-18. Resume PR flow rule (user chose to resume an existing tracked PR):
+15. Resume PR flow rule (user chose to resume an existing tracked PR):
     - Read `- branch name:` from the selected doc (fallback: title `# PR Tracking: <branch>`).
     - Switch to that branch (same rules as step 7).
     - Read `- PR link:` from the selected doc.
     - If `PR link` is non-empty and not `(not available locally)`, pass `--pr-url <that_link>`.
     - If `PR link` is missing, run without `--pr-url` on the switched branch.
-19. New PR flow rule (user chose new PR flow, or no active PR doc exists):
+16. New PR flow rule (user chose new PR flow, or no active PR doc exists):
     - Create and switch to a new branch before invoking the loop.
     - Branch naming must be task-derived and deterministic:
       - `task_seed`: first non-empty line from task text or task file.
@@ -82,7 +79,7 @@ All paths are relative to this SKILL.md file's location (the eternal-cycler inst
       - `branch_name`: `feat/auto-${task_slug:0:40}-$(date -u +%Y%m%dT%H%M%S)`.
       - If name already exists locally or on origin, append `-1`, `-2`, ... until unique.
     - Run `git switch -c <branch_name>`.
-20. Compose the task for the builder agent:
+17. Compose the task for the builder agent:
     - Prepend the following to the user's task text:
       ```
       You are starting a new ExecPlan. Create a new plan document in eternal-cycler-out/plans/active/.
@@ -90,13 +87,13 @@ All paths are relative to this SKILL.md file's location (the eternal-cycler inst
       Run execplan.post_creation gate immediately after writing the new plan. (See PLANS.md lifecycle step 2.)
       ```
     - Append the user's task text after the above preamble. Pass as `--task <text>` or `--task-file`.
-21. Run doctor before loop using the same resolved target (`--pr-url` if available, otherwise `--head-branch <current_branch_after_switch>`).
-22. Invoke the loop. Forward loop output directly to caller stdout/stderr.
+18. Run doctor before loop using the same resolved target (`--pr-url` if available, otherwise `--head-branch <current_branch_after_switch>`).
+19. Invoke the loop. Forward loop output directly to caller stdout/stderr.
 
 ### Always
 
-23. Treat `run_builder_reviewer_loop.sh` as non-interactive.
-24. Each builder and reviewer agent invocation enforces a minimum runtime of 1 hour (3600 seconds). The loop script enforces this automatically by sleeping for the remaining time after the agent exits. Do not pass `--min-agent-duration 0` or any value below 3600 unless the user explicitly requests it.
+20. Treat `run_builder_reviewer_loop.sh` as non-interactive.
+21. Each builder and reviewer agent invocation enforces a minimum runtime of 1 hour (3600 seconds). The loop script enforces this automatically by sleeping for the remaining time after the agent exits. Do not pass `--min-agent-duration 0` or any value below 3600 unless the user explicitly requests it.
 
 ## Suggested invocation template
 
