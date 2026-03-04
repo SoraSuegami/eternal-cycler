@@ -1,77 +1,66 @@
-# PR Review Meta-Rules
+# PR Review Policy
 
-This document defines how an agent must behave when instructed to review a pull request or act as a reviewer.
-All reviewer behavior in this policy is defined for fixed builder/reviewer autonomous loop execution.
-
-Reviewer mode is independent from author mode.  
-When review work begins, the agent must treat itself as a separate reviewer and must not trust the PR author's implementation quality by default.
-
-## Reviewer independence rule
-
-At the start of PR review work, reset reviewer posture:
-
-- discard assumptions formed while previously implementing code for any PR,
-- evaluate the target PR as if authored by another party,
-- apply strict, evidence-based review standards.
-
-## Mandatory review checks
-
-For the target PR, verify all of the following:
-
-1. GitHub CI status is passing.
-   - If CI checks are still `pending`/`in_progress`, do not wait; return the reviewer JSON payload immediately using current evidence.
-2. If tests were added or changed, confirm the test changes are aligned with the PR scope and are not superficial pass-only tests; perform static code analysis of test logic to verify substantive validation behavior.
-3. Run impacted unit tests that may be affected by the PR but are not covered by CI for this change. Select and execute tests yourself. Do not run integration tests unless explicitly instructed/approved by the user.
-4. Check for duplicated logic, unnecessary processing, dead private code paths, and obsolete fallback logic that was retained only for backward compatibility with old code/data without current necessity.
-5. If PR changes can materially affect benchmark outcomes, run relevant benchmarks and record the result delta against the target branch implementation (the PR base branch).
-6. Check for any other unnatural, inconsistent, or suspicious changes.
-7. Confirm the target ExecPlan includes a `Verification Ledger` with complete gate-attempt history for required lifecycle and action events.
-8. Inspect the latest plan document changed by the PR. If that plan indicates unresolved three-attempt failure/escalation state (for example, force-closed failed plan without corresponding remediation), the reviewer comment must explicitly demand remediation actions.
-
-## Verification source rule
-
-**Path resolution note:** Paths to gate and notify scripts are relative to the eternal-cycler installation root (injected into your prompt as `Path context`). Paths to verification skills and PR tracking are relative to the consuming repository root.
-
-Use repository-local event verification skills under `.agents/skills/execplan-event-*/`, with event resolution from `.agents/skills/execplan-event-index/references/event_skill_map.tsv`, and gate/notify scripts under `scripts/` to decide concrete commands and checks.
-
-Do not trust documentation claims blindly. Validate by reading code and running appropriate checks.
-
-## Review cycle
-
-A user may identify a PR by URL, title, a file under `eternal-cycler-out/prs/`, or a deictic reference such as "this PR".
-
-1. Identify the intended PR using reliable signals (for example `gh pr` queries and repository PR tracking docs).
-2. Ask the user for clarification only when confidence in PR identification is very low (approximately 10% confidence), and avoid unnecessary confirmation requests.
-3. Execute all mandatory review checks in this document.
-4. Return one English review result as a JSON payload for the loop script to post.
-5. End the current reviewer turn after returning the JSON payload for the requested target commit.
-
-If all checks pass, the returned review payload must explicitly state that outcome and include benchmark results when benchmarks were part of the review.
-
-## Reviewer JSON contract
-
-The reviewer must not post GitHub comments directly. Return exactly one JSON object with this schema:
-
-- `pr_url` (string): target PR URL.
-- `comment_body` (string): full English review comment text to post.
-- `approve_merge` (boolean): merge decision (`true` when approval is granted, otherwise `false`).
-
-The loop script invokes reviewer with `codex exec --output-schema` so output must conform to this JSON schema.
-Success stop condition is `approve_merge: true`. `approve_merge: false` means builder must continue with another implementation cycle. Missing/invalid JSON fields are contract violations and must be treated as failed review-cycle output.
-Reviewer must not block output on CI completion; if CI is still running, reviewer still returns a contract-compliant JSON payload for the current request.
-
-## Reviewer-mode restrictions
-
-- Local file creation/edit/delete is allowed for analysis support.
-- Committing or pushing local changes is forbidden in reviewer mode.
-- Remote write actions are forbidden; return JSON payload only.
+This document defines how an agent must behave when reviewing a pull request. All reviewer behavior applies to the builder/reviewer autonomous loop unless otherwise noted.
 
 ## Global Requirements
 
 - All review comments and PR comment bodies must be written in English.
 - When referencing file paths, use only paths relative to the repository top directory.
+- This document is long-lived and must stay consistent with repository verification policy and CI behavior. When reviewer policy changes, update this document in the same change set.
 
-## Maintenance rule
+## Reviewer independence rule
 
-This document is long-lived and must stay consistent with repository verification policy and CI behavior.
-If reviewer policy changes, update this document in the same change set.
+At the start of every review, reset reviewer posture completely:
+
+- Discard any assumptions formed while previously implementing code for any PR.
+- Evaluate the target PR as if authored by another party.
+- Apply strict, evidence-based review standards. Do not trust documentation claims blindly; validate by reading code and running appropriate checks.
+
+## Mandatory review checks
+
+For the target PR, verify all of the following before returning a decision:
+
+1. **CI status.** GitHub CI is passing. If checks are still `pending`/`in_progress`, do not wait — return the reviewer payload immediately using current evidence.
+2. **Test quality.** If tests were added or changed, confirm they are aligned with the PR scope and are not superficial pass-only tests. Perform static analysis of test logic to verify substantive validation behavior.
+3. **Local tests.** Run impacted unit tests that may be affected by the PR but are not covered by CI for this change. Do not run integration tests unless explicitly instructed by the user.
+4. **Code hygiene.** Check for duplicated logic, unnecessary processing, dead private code paths, and obsolete fallback logic retained without current necessity.
+5. **Benchmarks.** If PR changes can materially affect benchmark outcomes, run relevant benchmarks and record the result delta against the base branch.
+6. **Suspicious changes.** Check for any other unnatural, inconsistent, or suspicious changes.
+7. **Verification Ledger.** Confirm the target ExecPlan includes a `Verification Ledger` with complete gate-attempt history for required lifecycle and action events.
+8. **Plan state.** Inspect the latest plan document changed by the PR. If that plan indicates unresolved three-attempt failure/escalation (for example, a force-closed failed plan without remediation), the reviewer comment must explicitly demand remediation.
+
+If all checks pass, the returned payload must explicitly state that outcome and include benchmark results when benchmarks were run.
+
+## Verification sources
+
+**Path note:** Gate and notify script paths are relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Verification skill and PR tracking paths are relative to the consuming repository root.
+
+Use repository-local event verification skills under `.agents/skills/execplan-event-*/`, with event resolution from `.agents/skills/execplan-event-index/references/event_skill_map.tsv`, and gate/notify scripts under `scripts/` to decide concrete commands and checks.
+
+## Review cycle
+
+A user may identify a PR by URL, title, a file under `eternal-cycler-out/prs/`, or a deictic reference such as "this PR".
+
+1. Identify the intended PR using reliable signals (`gh pr` queries, repository PR tracking docs).
+2. Ask for clarification only when confidence in PR identification is very low (approximately 10%); avoid unnecessary confirmation requests.
+3. Execute all mandatory review checks above.
+4. Return exactly one JSON payload for the loop script to post.
+5. End the reviewer turn immediately after returning the payload.
+
+## Reviewer JSON contract
+
+Do not post GitHub comments directly. Return exactly one JSON object:
+
+- `pr_url` (string): target PR URL.
+- `comment_body` (string): full English review comment text to post.
+- `approve_merge` (boolean): `true` to approve merge, `false` to request another builder cycle.
+
+The loop script uses `codex exec --output-schema`; output must conform to this schema. Missing or invalid fields are contract violations and are treated as failed review-cycle output. Do not block on CI completion; return a compliant payload immediately.
+
+`approve_merge: true` is the success stop condition. `approve_merge: false` means the builder must continue with another implementation cycle.
+
+## Reviewer-mode restrictions
+
+- Local file creation/edit/delete is allowed for analysis support.
+- Committing or pushing local changes is forbidden.
+- All remote write actions are forbidden; return the JSON payload only.
