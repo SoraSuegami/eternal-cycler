@@ -44,6 +44,7 @@ All paths are relative to this SKILL.md file's location (the eternal-cycler inst
    - Run `git switch -c <branch_name>` and then run doctor+loop on that branch.
 10. Run doctor before loop using the same resolved target (`--pr-url` if available, otherwise `--head-branch <current_branch_after_switch>`).
 11. Forward loop output directly to caller stdout/stderr. Do not add tee/log-file capture.
+12. Each builder and reviewer agent invocation enforces a minimum runtime of 1 hour (3600 seconds). The loop script enforces this automatically by sleeping for the remaining time after the agent exits. Do not pass `--min-agent-duration 0` or any value below 3600 unless the user explicitly requests it.
 
 ## Suggested invocation template
 
