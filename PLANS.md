@@ -1,246 +1,196 @@
-# Codex Execution Plans (ExecPlans):
+# Codex Execution Plans (ExecPlans)
 
 ## Global Requirements
 
 - All documentation, git commit messages, and PRs must be written in English.
 - When documenting file paths, use only paths relative to the repository top directory. Do not write absolute paths in documentation.
 
-This document describes the requirements for an execution plan ("ExecPlan"), a design document that a coding agent can follow to deliver a working feature or system change. Treat the reader as a complete beginner to this repository: they have only the current working tree and the single ExecPlan file you provide. There is no memory of prior plans and no external context.
+An execution plan ("ExecPlan") is a design document that a coding agent follows to deliver a working feature or system change. Treat the reader as a complete beginner: they have only the current working tree and the single ExecPlan file. There is no memory of prior plans and no external context.
 
-## How to use ExecPlans and PLANS.md
+## Behavior when working with ExecPlans
 
-When authoring an executable specification (ExecPlan), follow PLANS.md _to the letter_. If it is not in your context, refresh your memory by reading the entire PLANS.md file. Be thorough in reading (and re-reading) source material to produce an accurate specification. When creating a spec, start from the skeleton and flesh it out as you do your research.
-
-When implementing an executable specification (ExecPlan), do not prompt the user for "next steps"; simply proceed to the next milestone. Keep all sections up to date, add or split entries in the list at every stopping point to affirmatively state the progress made and next steps. When a `Progress` action finishes, mark that action complete immediately before beginning the next action. Resolve ambiguities autonomously, and commit frequently. Do not request human confirmation until the ExecPlan Lifecycle defined below is complete, except when the lifecycle reaches the documented three-attempt escalation bound and a new retry ExecPlan must be created from operator feedback. If you delegate parallelizable actions to sub agents, merge and document their outcomes in the same ExecPlan rather than creating separate plan lifecycles.
-
-When discussing an executable specification (ExecPlan), record decisions in a log in the spec for posterity; it should be unambiguously clear why any change to the specification was made. ExecPlans are living documents, and it should always be possible to restart from _only_ the ExecPlan and no other work.
-
-When researching a design with challenging requirements or significant unknowns, use milestones to implement proof of concepts, "toy implementations", etc., that allow validating whether the user's proposal is feasible. Read the source code of libraries by finding or acquiring them, research deeply, and include prototypes to guide a fuller implementation.
+- **Read PLANS.md in full** before authoring or implementing. Start a new plan from the skeleton below.
+- **Proceed autonomously.** Do not prompt the user for "next steps." Resolve ambiguities in the plan itself; do not pause for confirmation unless the escalation bound is reached.
+- **Mark progress immediately.** When a `Progress` action finishes, mark it `[x]` before starting the next action. Commit frequently.
+- **One plan per objective.** Merge sub-agent outcomes into the same ExecPlan; do not create separate sub-plan lifecycle documents.
+- **Record decisions.** All design choices go into the `Decision Log` with rationale. It must always be possible to restart from only the ExecPlan.
+- **Research deeply.** Use prototyping milestones for risky or unknown requirements; read library source code; embed all required knowledge in the plan itself rather than linking to external docs.
 
 ## Requirements
 
-NON-NEGOTIABLE REQUIREMENTS:
+Every ExecPlan must satisfy these non-negotiable requirements:
 
-* Every ExecPlan must be fully self-contained. Self-contained means that in its current form it contains all knowledge and instructions needed for a novice to succeed.
-* Every ExecPlan is a living document. Contributors are required to revise it as progress is made, as discoveries occur, and as design decisions are finalized. Each revision must remain fully self-contained.
-* Every ExecPlan must enable a complete novice to implement the feature end-to-end without prior knowledge of this repo.
-* Every ExecPlan must produce a demonstrably working behavior, not merely code changes to "meet a definition".
-* Every ExecPlan must define every term of art in plain language or do not use it.
+* **Self-contained and novice-enabling.** In its current form it contains all knowledge needed for a complete novice to implement the feature end-to-end without prior knowledge of this repository.
+* **Living document.** Revise it as progress is made, as discoveries occur, and as decisions are finalized. Each revision must remain fully self-contained.
+* **Demonstrably working.** The plan must produce observable behavior, not merely code changes that "meet a definition."
+* **Plain language.** Define every term of art immediately. Do not say "as defined previously" or "see the architecture doc."
 
-Purpose and intent come first. Begin by explaining, in a few sentences, why the work matters from a user's perspective: what someone can do after this change that they could not do before, and how to see it working. Then guide the reader through the exact steps to achieve that outcome, including what to edit, what to run, and what they should observe.
+State purpose and intent first: explain why the work matters, what someone can do after the change that they could not do before, and how to observe it working. Then provide the exact steps to achieve that outcome.
 
-The agent executing your plan can list files, read files, search, run the project, and run tests. It does not know any prior context and cannot infer what you meant from earlier milestones. Repeat any assumption you rely on. Do not point to external blogs or docs; if knowledge is required, embed it in the plan itself in your own words. If an ExecPlan builds upon a prior ExecPlan and that file is checked in, incorporate it by reference. If it is not, you must include all relevant context from that plan.
+The executing agent can list files, read files, search, run the project, and run tests. It has no prior context. Repeat any assumption you rely on. If this plan builds on a prior checked-in ExecPlan, incorporate it by reference; otherwise include all relevant context.
 
 ## Formatting
 
-Format and envelope are simple and strict. Each ExecPlan must be one single fenced code block labeled as `md` that begins and ends with triple backticks. Do not nest additional triple-backtick code fences inside; when you need to show commands, transcripts, diffs, or code, present them as indented blocks within that single fence. Use indentation for clarity rather than code fences inside an ExecPlan to avoid prematurely closing the ExecPlan's code fence. Use two newlines after every heading, use # and ## and so on, and correct syntax for ordered and unordered lists.
+Each ExecPlan is one single fenced code block labeled `md` (triple backticks). Do not nest additional triple-backtick fences inside; show commands, transcripts, diffs, or code as indented blocks. When writing an ExecPlan to a standalone `.md` file, omit the triple backticks.
 
-When writing an ExecPlan to a Markdown (.md) file where the content of the file *is only* the single ExecPlan, you should omit the triple backticks.
-
-Write in plain prose. Prefer sentences over lists. Avoid checklists, tables, and long enumerations unless brevity would obscure meaning. Checklists are permitted only in the `Progress` section, where they are mandatory. Narrative sections must remain prose-first.
+Write in plain prose. Prefer sentences over lists. Checklists are permitted only in `Progress`, where they are mandatory. Narrative sections must be prose-first.
 
 ## Guidelines
 
-Self-containment and plain language are paramount. If you introduce a phrase that is not ordinary English ("daemon", "middleware", "RPC gateway", "filter graph"), define it immediately and remind the reader how it manifests in this repository (for example, by naming the files or commands where it appears). Do not say "as defined previously" or "according to the architecture doc." Include the needed explanation here, even if you repeat yourself.
+**Resolve ambiguity in the plan, not in execution.** Do not outsource key decisions to the reader. When ambiguity exists, choose a path and explain why. Err toward over-explaining user-visible effects and under-specifying implementation details.
 
-Avoid common failure modes. Do not rely on undefined jargon. Do not describe "the letter of a feature" so narrowly that the resulting code compiles but does nothing meaningful. Do not outsource key decisions to the reader. When ambiguity exists, resolve it in the plan itself and explain why you chose that path. Err on the side of over-explaining user-visible effects and under-specifying incidental implementation details.
+**Anchor with observable outcomes.** Phrase acceptance as behavior a human can verify ("after starting the server, navigating to http://localhost:8080/health returns HTTP 200 with body OK"), not internal attributes. For internal changes, show how to observe the effect through tests or a scenario.
 
-Anchor the plan with observable outcomes. State what the user can do after implementation, the commands to run, and the outputs they should see. Acceptance should be phrased as behavior a human can verify ("after starting the server, navigating to [http://localhost:8080/health](http://localhost:8080/health) returns HTTP 200 with body OK") rather than internal attributes ("added a HealthCheck struct"). If a change is internal, explain how its impact can still be demonstrated (for example, by running tests that fail before and pass after, and by showing a scenario that uses the new behavior).
+**Specify repository context explicitly.** Name files by full repository-relative paths. Name functions and modules precisely. Show the working directory and exact command line for every command. When outcomes depend on environment, state the assumptions.
 
-Specify repository context explicitly. Name files with full repository-relative paths, name functions and modules precisely, and describe where new files should be created. If touching multiple areas, include a short orientation paragraph that explains how those parts fit together so a novice can navigate confidently. When running commands, show the working directory and exact command line. When outcomes depend on environment, state the assumptions and provide alternatives when reasonable.
+**Be idempotent and safe.** Write steps that can be run multiple times without drift. For risky or destructive steps, provide a retry path or rollback.
 
-Be idempotent and safe. Write the steps so they can be run multiple times without causing damage or drift. If a step can fail halfway, include how to retry or adapt. If a migration or destructive operation is necessary, spell out backups or safe fallbacks. Prefer additive, testable changes that can be validated as you go.
+**Validation is mandatory.** Include test commands, expected outputs, and a short end-to-end scenario. State exact test commands and how to interpret results. Show how to prove the change is effective beyond compilation.
 
-Validation is not optional. Include instructions to run tests, to start the system if applicable, and to observe it doing something useful. Describe comprehensive testing for any new features or capabilities. Include expected outputs and error messages so a novice can tell success from failure. Where possible, show how to prove that the change is effective beyond compilation (for example, through a small end-to-end scenario, a CLI invocation, or an HTTP request/response transcript). State the exact test commands appropriate to the project’s toolchain and how to interpret their results.
-
-Capture evidence. When your steps produce terminal output, short diffs, or logs, include them inside the single fenced block as indented examples. Keep them concise and focused on what proves success. If you need to include a patch, prefer file-scoped diffs or small excerpts that a reader can recreate by following your instructions rather than pasting large blobs.
+**Capture evidence.** Include terminal output, short diffs, or logs as indented examples inside the plan fence.
 
 ## Milestones
 
-Milestones are narrative, not bureaucracy. If you break the work into milestones, introduce each with a brief paragraph that describes the scope, what will exist at the end of the milestone that did not exist before, the commands to run, and the acceptance you expect to observe. Keep it readable as a story: goal, work, result, proof. Progress and milestones are distinct: milestones tell the story, progress tracks granular work. Both must exist. Never abbreviate a milestone merely for the sake of brevity, do not leave out details that could be crucial to a future implementation.
+Milestones are narrative, not bureaucracy. Each milestone introduces its scope in one paragraph — goal, work, result, proof — and must be independently verifiable and incrementally implement the overall goal. Never abbreviate a milestone for the sake of brevity; do not omit details that could be crucial for a future implementation.
 
-Each milestone must be independently verifiable and incrementally implement the overall goal of the execution plan.
+Milestones and Progress serve different roles: milestones tell the story, Progress tracks granular work. Both must exist.
+
+## Prototyping milestones and parallel implementations
+
+Include explicit prototyping milestones when they de-risk a larger change (feasibility probes, toy implementations, spikes). Keep prototypes additive and testable. Label scope as "prototyping," describe how to run and observe results, and state the criteria for promoting or discarding the prototype.
+
+Prefer additive changes followed by subtractions that keep tests passing. Parallel implementations are acceptable during migration — describe how to validate both paths and how to retire one safely.
 
 ## Living plans and design decisions
 
-* ExecPlans are living documents. As you make key design decisions, update the plan to record both the decision and the thinking behind it. Record all decisions in the `Decision Log` section.
-* ExecPlans must contain and maintain a `Progress` section, a `Surprises & Discoveries` section, a `Decision Log`, and an `Outcomes & Retrospective` section. These are not optional.
-* When you discover optimizer behavior, performance tradeoffs, unexpected bugs, or inverse/unapply semantics that shaped your approach, capture those observations in the `Surprises & Discoveries` section with short evidence snippets (test output is ideal).
-* If you change course mid-implementation, document why in the `Decision Log` and reflect the implications in `Progress`. Plans are guides for the next contributor as much as checklists for you.
-* At completion of a major task or the full plan, write an `Outcomes & Retrospective` entry summarizing what was achieved, what remains, and lessons learned.
+ExecPlans must contain and maintain these sections (all are mandatory):
 
-## Plan file locations and status
+* `Progress` — checkbox list, always reflecting the current state
+* `Verification Ledger` — all gate attempt records
+* `Surprises & Discoveries` — unexpected behaviors, bugs, or insights with short evidence
+* `Decision Log` — every decision with rationale, date, and author
+* `Outcomes & Retrospective` — summary at major milestones and at completion
 
-When creating a new plan markdown file, place it by status:
+If you change course mid-implementation, document why in `Decision Log` and reflect the implications in `Progress`.
 
-* Active plans must be created in `eternal-cycler-out/plans/active/`.
-* Completed plans must be moved to `eternal-cycler-out/plans/completed/`.
-* Remaining technical debt plans must be created or moved to `eternal-cycler-out/plans/tech-debt/`.
+## Plan file locations
 
-Any markdown file in `eternal-cycler-out/plans/tech-debt/` must include links to the related plan markdown files (for example, active or completed plans that introduced, mitigated, or depend on that debt). The links must be explicit repository-relative markdown links so a reader can navigate directly.
+* Active plans → `eternal-cycler-out/plans/active/`
+* Completed plans → `eternal-cycler-out/plans/completed/`
+* Technical debt → `eternal-cycler-out/plans/tech-debt/`
+
+Files in `tech-debt/` must include explicit repository-relative markdown links to the related plans (active or completed) that introduced, mitigated, or depend on that debt.
 
 ## Action-Level Parallel Execution
 
-This repository uses one lifecycle target: a single `ExecPlan` document for one end-to-end objective.
+One lifecycle, one ExecPlan per objective. For large work, decompose into action-level units inside that one plan; do not create separate sub-plan lifecycle documents.
 
-If work is large, decompose it into action-level units inside that one plan and delegate only parallelizable actions to sub agents. Do not create separate sub-plan lifecycle documents for that decomposition.
+The `Progress` section must document execution topology for each delegated action:
 
-The `Progress` section must document execution topology for delegated actions:
+* `action_id`, `mode` (`serial` or `parallel`), `depends_on`, `file_locks`, `verify_events`, `worker_type`
 
-* which actions are parallelizable and which are sequential,
-* dependency order for sequential actions (`depends_on`),
-* file-level ownership for conflict prevention (`file_locks`),
-* sub-agent assignment (`worker_type`) when more than one sub-agent type is available.
+An action is parallelizable only when all `depends_on` actions are complete and `file_locks` for concurrent actions are disjoint. Delegate only `mode=parallel` actions to sub agents. The parent ExecPlan owner is responsible for conflict resolution and merging outcomes.
 
-An action is parallelizable only when both conditions hold:
+## Verification Policy
 
-* all `depends_on` actions are already completed, and
-* `file_locks` for concurrently running actions are disjoint.
+Verification is enforced by the gate script and event-local skills.
 
-If conflicts still occur during delegated parallel execution, the parent ExecPlan owner is responsible for conflict resolution and for recording the final merged outcome in the same plan.
+**Path note:** Gate and notify script paths are relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Verification skill, plan, and PR tracking paths are relative to the consuming repository root.
 
-## How ExecPlans must use integrated verification policy
+Operational source of truth:
 
-Each ExecPlan must explicitly describe how it applied the integrated verification policy defined in this document.
-
-At the beginning of the ExecPlan, include a short repository-document context paragraph that names the repository-local verification scripts used for verification execution. Use repository-relative paths.
-
-For verification, follow this rule: every ExecPlan must identify the event-index map, list exact verification commands planned, and record commands actually run in `Verification Ledger`. Update this document only when long-lived verification policy changes. Update repository-local verification scripts when event execution procedures or event mappings change.
-
-Before moving an ExecPlan from `eternal-cycler-out/plans/active/` to `eternal-cycler-out/plans/completed/`, the plan must include an explicit note of what verification scripts were referenced, created, modified, or left unchanged, and why.
-
-## Integrated Verification Policy
-
-Verification policy is defined in this section. Event execution procedures are defined by repository-local skills and scripts.
-
-**Path resolution note:** Paths to policy docs, gate, and notify scripts are relative to the eternal-cycler installation root (injected into your prompt as `Path context`). Paths to verification skills, plans, and PR tracking are relative to the consuming repository root. The parent loop script makes all resolved paths explicit under "Path context".
-
-Operational verification source of truth:
-
-* `.agents/skills/execplan-event-index/SKILL.md`
 * `.agents/skills/execplan-event-index/references/event_skill_map.tsv`
 * each mapped event skill under `.agents/skills/execplan-event-*/`
-* `.agents/skills/execplan-sandbox-escalation/SKILL.md`
-* `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
-* `scripts/execplan_gate.sh`
-* `scripts/execplan_notify.sh`
+* `.agents/skills/execplan-sandbox-escalation/SKILL.md` and `references/allowed_command_prefixes.md`
+* `scripts/execplan_gate.sh`, `scripts/execplan_notify.sh`
 
-Default verification skill templates (do not edit these directly; edit the copies in `.agents/skills/`):
-* `assets/default-verification/execplan-event-*/`
+Templates (do not edit directly; edit copies in `.agents/skills/`): `assets/default-verification/execplan-event-*/`
 
 ### Event model
 
 Event membership is data-driven by `.agents/skills/execplan-event-index/references/event_skill_map.tsv`.
 
-The following lifecycle events are mandatory and must always exist in that map:
+Mandatory lifecycle events (must always be in the map):
 
 * `execplan.pre_creation`
 * `execplan.post_completion`
 
-Action events are intentionally flexible and may be added or removed over time without changing this policy text, as long as they are registered in the event map.
+Action events are flexible and may be added or removed without changing this policy text, as long as they are registered in the event map. To add a new event, add a skill directory under `.agents/skills/` and register it in the event map.
 
 ### Enforcement model
 
-Verification is enforced by gate execution:
+Gate command: `scripts/execplan_gate.sh --event <event_id> [--plan <plan_md>] [--attempt <n>]`
 
-* `scripts/execplan_gate.sh --event <event_id> [--plan <plan_md>] [--attempt <n>]`
+The gate blocks lifecycle progress when any previously attempted event remains in `fail` or `escalated` state, and additionally:
 
-The gate must reject lifecycle progress when required events are unexecuted, failed, or escalated.
+* rejects lifecycle events (`execplan.pre_creation`, `execplan.post_completion`) in `Progress` action `verify_events`
+* blocks `execplan.post_completion` until every action event in `verify_events` has at least one `pass` entry in the Verification Ledger
 
-At minimum, gate enforcement must include:
+### Retry and escalation
 
-* block advancing to a different event while any previously attempted event remains in latest `fail` or `escalated` state,
-* reject any `Progress` action metadata that includes lifecycle events (`execplan.pre_creation`, `execplan.post_completion`) in `verify_events`,
-* block `execplan.post_completion` unless every action event listed in `Progress` `verify_events` has at least one `pass` entry in `Verification Ledger`.
+Max attempts per event: **3**. If the bound is exceeded, the gate marks the event `escalated` and stops progress. After escalation:
 
-### Retry and escalation bounds
-
-For each event:
-
-* max attempts: 3
-
-If the attempt bound is exceeded, the gate must mark the event as `escalated`, stop lifecycle progress, and require blocker reporting.
-After escalation, the current plan must be force-closed as failed in `eternal-cycler-out/plans/completed/` with explicit failure documentation, and retries must continue only through a new active ExecPlan created from human-operator feedback that references the failed plan.
-
-### Notification policy
-
-Do not notify on every event.
-
-If notification is needed, post only once after all actions are complete, `execplan.post_completion` is `pass`, and required commits are already pushed by action/loop workflows:
-
-* `scripts/execplan_notify.sh --plan <completed_plan_md> --event execplan.post_completion --status pass`
-
-Notification target is GitHub PR comment.
+* document failure explicitly in `Progress`, `Verification Ledger`, and `Outcomes & Retrospective`
+* force-close the current plan as failed (move to `eternal-cycler-out/plans/completed/`)
+* resume only via a new ExecPlan in `eternal-cycler-out/plans/active/` seeded from human-operator feedback referencing the failed plan
 
 ### Sandbox escalation policy
 
-When executing ExecPlan actions or verification events, apply this out-of-sandbox command policy:
+Before running any out-of-sandbox command:
 
-* `.agents/skills/execplan-sandbox-escalation/SKILL.md` is mandatory for all out-of-sandbox command execution,
-* invoke that skill and read `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md` before requesting or running any out-of-sandbox command,
-* prefer implementing the needed function with already allowed prefixes,
-* if existing prefixes cannot safely realize the function, request human operator approval for a new out-of-sandbox command and add a safely generalized prefix entry to `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`.
-* if this mandatory skill step is not completed, do not execute out-of-sandbox commands and treat the state as a policy violation that blocks lifecycle progress until corrected.
+1. Read `.agents/skills/execplan-sandbox-escalation/SKILL.md`
+2. Check `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
+3. Use an existing allowed prefix when possible
+4. If none apply, request human approval and add a safely generalized prefix to the reference file
+
+Skipping this step is a policy violation that blocks lifecycle progress.
 
 ### Evidence policy
 
-Short-lived verification logs must not be stored in separate temporary tracking files.
+Record every gate attempt in the plan's `## Verification Ledger` with:
 
-Each ExecPlan must include `## Verification Ledger` entries for every event attempt with:
+`event_id`, `attempt`, `status` (`pass`/`fail`/`escalated`), `commands`, `failure_summary`, `notify_reference`, `started_at`, `finished_at`
 
-* `event_id`
-* `attempt`
-* `status` (`pass`, `fail`, `escalated`)
-* `commands`
-* `failure_summary`
-* `notify_reference`
-* `started_at`
-* `finished_at`
+Do not store verification logs in separate temporary files.
+
+### Notification policy
+
+Notify at most once, after all actions complete and `execplan.post_completion` passes:
+
+* `scripts/execplan_notify.sh --plan <completed_plan_md> --event execplan.post_completion --status pass`
+
+Notification target is a GitHub PR comment.
 
 ## ExecPlan Lifecycle
 
-Agents must strictly follow this lifecycle to create, execute, and complete an ExecPlan.
+Follow this sequence strictly.
 
-1. Before creating a new ExecPlan document, run pre-creation verification:
+1. **Pre-creation gate** — run out-of-sandbox before creating the plan document:
    * `scripts/execplan_gate.sh --event execplan.pre_creation`
-   * Execute this lifecycle gate command out-of-sandbox.
-   * If you are reusing an existing plan document, run with `--plan <plan_md>` so the attempt is recorded directly in that plan ledger.
-2. Create or select one target ExecPlan document under `eternal-cycler-out/plans/active/`.
-   * For a newly created plan document, run `scripts/execplan_gate.sh --plan <plan_md> --event execplan.pre_creation` immediately so the plan ledger contains explicit pre-creation pass evidence required by later gate checks.
-3. Before action execution, map each `Progress` action to metadata and verification events from the event-index map:
-   * required metadata: `action_id`, `mode`, `depends_on`, `file_locks`, `verify_events`, `worker_type`,
-   * `verify_events` values must be `action.*` event IDs registered in `.agents/skills/execplan-event-index/references/event_skill_map.tsv`,
-   * lifecycle events (`execplan.pre_creation`, `execplan.post_completion`) must never appear in `Progress` action `verify_events`.
-4. Execute actions in dependency order. Delegate only `mode=parallel` actions to sub agents, and keep all status updates in the same ExecPlan.
-   * As soon as one action is completed, update that action's checkbox in `Progress` to `[x]` before starting the next action.
-   * Any out-of-sandbox command execution during action work or verification must follow the `Sandbox escalation policy` in this document and the mandatory skill `.agents/skills/execplan-sandbox-escalation/SKILL.md`.
-5. After each action, run `scripts/execplan_gate.sh` for each mapped action event in `verify_events`. The gate must block lifecycle progress when verification fails or remains unexecuted.
-6. Record every gate attempt in the plan's `Verification Ledger` section.
-7. On failure, run auto-fix and retry loops through the gate until pass, within policy bound (`3 tries`).
-   * If the same event fails three consecutive attempts, record `escalated`, document failure explicitly in the current plan (`Progress`, `Verification Ledger`, and `Outcomes & Retrospective`), and force-close that plan as failed by moving it to `eternal-cycler-out/plans/completed/`.
-   * After force-closing the failed plan, stop execution of that plan. Resume work only after human operator feedback by creating a new ExecPlan in `eternal-cycler-out/plans/active/` that references the failed plan and describes the retry scope.
-8. After all actions and action-level verification events pass, finalize plan document state first:
-   * update progress/outcomes/ledger sections,
-   * move the plan to `eternal-cycler-out/plans/completed/`,
-   * ensure required implementation commits are already pushed before entering post-completion verification,
-   * add technical-debt follow-up plans when needed.
-9. Run post-completion verification:
-   * `scripts/execplan_gate.sh --plan <completed_plan_md> --event execplan.post_completion`.
-   * Execute this lifecycle gate command out-of-sandbox.
-   * `execplan.post_completion` is lifecycle-only and must not be listed in any `Progress` action `verify_events`.
-   * `execplan.post_completion` is validation-only and must not run `git add`, `git commit`, or `git push`.
-   * Post-completion operational behavior is defined only in `.agents/skills/execplan-event-post-completion/SKILL.md` and its script.
-   * If post-completion verification fails and attempts remain, follow the skill-defined rollback/remediation behavior, then rerun post-completion.
-   * If post-completion reaches three consecutive failures, apply step 7 escalation handling (force-close failed plan, then restart with a new operator-seeded ExecPlan).
-10. If configured, post one final notification PR comment after all validations pass:
-   * `scripts/execplan_notify.sh --plan <completed_plan_md> --event execplan.post_completion --status pass`
-   * The lifecycle is complete after this step.
-
-# Prototyping milestones and parallel implementations
-
-It is acceptable—-and often encouraged—-to include explicit prototyping milestones when they de-risk a larger change. Examples: adding a low-level operator to a dependency to validate feasibility, or exploring two composition orders while measuring optimizer effects. Keep prototypes additive and testable. Clearly label the scope as “prototyping”; describe how to run and observe results; and state the criteria for promoting or discarding the prototype.
-
-Prefer additive code changes followed by subtractions that keep tests passing. Parallel implementations (e.g., keeping an adapter alongside an older path during migration) are fine when they reduce risk or enable tests to continue passing during a large migration. Describe how to validate both paths and how to retire one safely with tests. When working with multiple new libraries or feature areas, consider creating spikes that evaluate the feasibility of these features _independently_ of one another, proving that the external library performs as expected and implements the features we need in isolation.
+   * If reusing an existing plan: add `--plan <plan_md>` to record the attempt in that ledger.
+2. **Create or select plan** in `eternal-cycler-out/plans/active/`. For a new document, immediately run:
+   * `scripts/execplan_gate.sh --plan <plan_md> --event execplan.pre_creation`
+3. **Map actions** — for each `Progress` action, define: `action_id`, `mode`, `depends_on`, `file_locks`, `verify_events`, `worker_type`. `verify_events` must contain only `action.*` IDs registered in the event map. Lifecycle events must never appear in `verify_events`.
+4. **Execute actions** in dependency order. Mark each `[x]` immediately when complete. Out-of-sandbox commands must follow the sandbox escalation policy.
+5. **Verify after each action** — run `scripts/execplan_gate.sh` for each event in `verify_events`. The gate blocks progress on failure.
+6. **Record all gate attempts** in `## Verification Ledger`.
+7. **On failure** — retry up to 3 attempts. On escalation:
+   * document failure in `Progress`, `Verification Ledger`, and `Outcomes & Retrospective`
+   * move the plan to `eternal-cycler-out/plans/completed/` as failed
+   * stop; resume only via a new ExecPlan after operator feedback
+8. **Finalize plan** after all actions pass:
+   * update all living-document sections (`Progress`, `Surprises & Discoveries`, `Decision Log`, `Outcomes & Retrospective`)
+   * note which verification scripts were referenced, created, modified, or left unchanged, and why
+   * move the plan to `eternal-cycler-out/plans/completed/`
+   * ensure all implementation commits are pushed
+   * add tech-debt follow-up plans if needed
+9. **Post-completion gate** — run out-of-sandbox:
+   * `scripts/execplan_gate.sh --plan <completed_plan_md> --event execplan.post_completion`
+   * `execplan.post_completion` is validation-only: no `git add`, `git commit`, or `git push`
+   * Behavior on failure/escalation: same as step 7
+10. **Notify** (if configured):
+    * `scripts/execplan_notify.sh --plan <completed_plan_md> --event execplan.post_completion --status pass`
+    * Lifecycle complete.
 
 ## Skeleton of a Good ExecPlan
 
@@ -248,7 +198,7 @@ Prefer additive code changes followed by subtractions that keep tests passing. P
 
     This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-    If PLANS.md file is checked into the repo, reference the path to that file here from the repository root and note that this document must be maintained in accordance with PLANS.md.
+    If PLANS.md is checked into this repo, reference its path here from the repository root and note that this document must be maintained in accordance with PLANS.md.
 
     ## Purpose / Big Picture
 
@@ -256,22 +206,19 @@ Prefer additive code changes followed by subtractions that keep tests passing. P
 
     ## Progress
 
-    Use a list with checkboxes to summarize granular steps. Every stopping point must be documented here, even if it requires splitting a partially completed task into two (“done” vs. “remaining”). This section must always reflect the actual current state of the work.
+    Use a list with checkboxes to summarize granular steps. Every stopping point must be documented here, even if it requires splitting a partially completed task into two ("done" vs. "remaining"). This section must always reflect the actual current state.
 
     - [x] (2025-10-01 13:00Z) Example completed step.
     - [ ] Example incomplete step.
-    - [ ] Example partially completed step (completed: X; remaining: Y).
     - [ ] action_id=a3; mode=parallel; depends_on=a1,a2; file_locks=src/lookup/mod.rs; verify_events=action.tooling; worker_type=worker; implement lookup cache rewrite.
 
-    Use timestamps to measure rates of progress.
+    Use timestamps to measure rates of progress. Mark each action `[x]` immediately when it finishes.
 
-    During execution, mark each action as `[x]` immediately when that action finishes, before starting the next action.
-
-    Each `Progress` action must define execution metadata: `action_id`, `mode` (`serial` or `parallel`), `depends_on`, `file_locks`, `verify_events`, and `worker_type` when multiple sub-agent types exist. `verify_events` must contain only `action.*` events; lifecycle events are executed only by lifecycle steps.
+    Each `Progress` action must define: `action_id`, `mode` (`serial` or `parallel`), `depends_on`, `file_locks`, `verify_events`, `worker_type`. `verify_events` must contain only `action.*` events; lifecycle events are executed only by lifecycle steps.
 
     ## Verification Ledger
 
-    Record every verification event attempt in this section using one entry per attempt with:
+    Record every verification event attempt with one entry per attempt:
 
     - `event_id`
     - `attempt`
@@ -291,7 +238,7 @@ Prefer additive code changes followed by subtractions that keep tests passing. P
 
     ## Decision Log
 
-    Record every decision made while working on the plan in the format:
+    Record every decision made while working on the plan:
 
     - Decision: …
       Rationale: …
@@ -303,7 +250,7 @@ Prefer additive code changes followed by subtractions that keep tests passing. P
 
     ## Context and Orientation
 
-    Describe the current state relevant to this task as if the reader knows nothing. Name the key files and modules by full path. Define any non-obvious term you will use. Do not refer to prior plans.
+    Describe the current state relevant to this task as if the reader knows nothing. Name key files and modules by full path. Define any non-obvious term you will use. Do not refer to prior plans.
 
     ## Plan of Work
 
@@ -311,30 +258,24 @@ Prefer additive code changes followed by subtractions that keep tests passing. P
 
     ## Concrete Steps
 
-    State the exact commands to run and where to run them (working directory). When a command generates output, show a short expected transcript so the reader can compare. This section must be updated as work proceeds.
+    State the exact commands to run and the working directory. Show short expected output for commands that produce output. Update this section as work proceeds.
 
     ## Validation and Acceptance
 
-    Describe how to start or exercise the system and what to observe. Phrase acceptance as behavior, with specific inputs and outputs. If tests are involved, say "run <project’s test command> and expect <N> passed; the new test <name> fails before the change and passes after>".
+    Describe how to exercise the system and what to observe. Phrase acceptance as behavior with specific inputs and outputs. If tests are involved: "run <test command> and expect <N> passed; the new test <name> fails before the change and passes after."
 
     ## Idempotence and Recovery
 
-    If steps can be repeated safely, say so. If a step is risky, provide a safe retry or rollback path. Keep the environment clean after completion.
+    If steps can be repeated safely, say so. If a step is risky, provide a retry or rollback path.
 
     ## Artifacts and Notes
 
-    Include the most important transcripts, diffs, or snippets as indented examples. Keep them concise and focused on what proves success.
+    Include the most important transcripts, diffs, or snippets as indented examples.
 
     ## Interfaces and Dependencies
 
-    Be prescriptive. Name the libraries, modules, and services to use and why. Specify the types, traits/interfaces, and function signatures that must exist at the end of the milestone. Prefer stable names and paths such as `crate::module::function` or `package.submodule.Interface`. E.g.:
+    Name the libraries, modules, and services to use and why. Specify types, interfaces, and function signatures that must exist at the end of the milestone.
 
-    In crates/foo/planner.rs, define:
+A single, stateless agent — or a human novice — must be able to read your ExecPlan from top to bottom and produce a working, observable result. That is the bar: SELF-CONTAINED, SELF-SUFFICIENT, NOVICE-GUIDING, OUTCOME-FOCUSED.
 
-        pub trait Planner {
-            fn plan(&self, observed: &Observed) -> Vec<Action>;
-        }
-
-If you follow the guidance above, a single, stateless agent -- or a human novice -- can read your ExecPlan from top to bottom and produce a working, observable result. That is the bar: SELF-CONTAINED, SELF-SUFFICIENT, NOVICE-GUIDING, OUTCOME-FOCUSED.
-
-When you revise a plan, you must ensure your changes are comprehensively reflected across all sections, including the living document sections, and you must write a note at the bottom of the plan describing the change and the reason why. ExecPlans must describe not just the what but the why for almost everything.
+When you revise a plan, ensure changes are reflected across all sections and write a note at the bottom describing what changed and why.
