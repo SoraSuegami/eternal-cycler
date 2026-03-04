@@ -182,13 +182,40 @@ ledger_lines() {
 
 count_attempts() {
   local event_id="$1"
-  ledger_lines | rg -cF "event_id=${event_id};" || true
+  ledger_lines | awk -v target="$event_id" '
+    /event_id=/ {
+      n=split($0, parts, ";")
+      for (i=1; i<=n; i++) {
+        if (parts[i] ~ /event_id=/) {
+          tmp=parts[i]
+          gsub(/^.*event_id=/, "", tmp)
+          gsub(/^ +| +$/, "", tmp)
+          if (tmp == target) { count++ }
+        }
+      }
+    }
+    END { print count+0 }
+  '
 }
 
 has_pass() {
   local event_id="$1"
-  local escaped="${event_id//./\\.}"
-  ledger_lines | rg -q "event_id=${escaped};.*status=pass"
+  ledger_lines | awk -v target="$event_id" '
+    /event_id=/ && /status=/ {
+      event=""; status=""
+      n=split($0, parts, ";")
+      for (i=1; i<=n; i++) {
+        if (parts[i] ~ /event_id=/) {
+          tmp=parts[i]; gsub(/^.*event_id=/, "", tmp); gsub(/^ +| +$/, "", tmp); event=tmp
+        }
+        if (parts[i] ~ /status=/) {
+          tmp=parts[i]; gsub(/^.*status=/, "", tmp); gsub(/^ +| +$/, "", tmp); status=tmp
+        }
+      }
+      if (event == target && status == "pass") { found=1 }
+    }
+    END { exit(found ? 0 : 1) }
+  '
 }
 
 has_non_lifecycle_pass() {
