@@ -88,7 +88,7 @@ warn_count=0
 
 run_check() {
   local label="$1"
-  local cmd="$2"
+  shift
   local out_file
   local rc
   local summary
@@ -96,7 +96,7 @@ run_check() {
   out_file="$(mktemp)"
 
   set +e
-  bash -lc "$cmd" >"$out_file" 2>&1
+  "$@" >"$out_file" 2>&1
   rc=$?
   set -e
 
@@ -121,11 +121,11 @@ run_check() {
   return 1
 }
 
-run_check "GitHub authentication" "gh auth status"
-run_check "Codex authentication" "codex login status"
+run_check "GitHub authentication" gh auth status
+run_check "Codex authentication" codex login status
 
 if [[ -n "$PR_URL" ]]; then
-  run_check "PR metadata access" "gh pr view '$PR_URL' --json number,url,state,mergedAt,headRefName,baseRefName,isDraft"
+  run_check "PR metadata access" gh pr view "$PR_URL" --json number,url,state,mergedAt,headRefName,baseRefName,isDraft
 else
   if git show-ref --verify --quiet "refs/heads/$HEAD_BRANCH" || git ls-remote --exit-code --heads origin "$HEAD_BRANCH" >/dev/null 2>&1; then
     echo "[OK] head branch is visible: $HEAD_BRANCH"
@@ -134,7 +134,7 @@ else
     hard_fail=1
   fi
 
-  run_check "PR discovery access by head branch" "gh pr list --head '$HEAD_BRANCH' --state all --json number,url,headRefName,state,isDraft,mergedAt --limit 20"
+  run_check "PR discovery access by head branch" gh pr list --head "$HEAD_BRANCH" --state all --json number,url,headRefName,state,isDraft,mergedAt --limit 20
 fi
 
 if [[ "$hard_fail" -ne 0 ]]; then
