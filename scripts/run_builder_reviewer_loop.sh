@@ -214,7 +214,7 @@ run_codex_prompt_capture() {
   local model="$2"
   local prompt_text="$3"
   local schema_file="${4:-}"
-  local output rc last_message_file
+  local rc last_message_file
 
   local cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --cd "$WORKDIR")
   if [[ -n "$model" ]]; then
@@ -226,20 +226,17 @@ run_codex_prompt_capture() {
   fi
   cmd+=(-)
 
+  # Stream codex output directly to the terminal so the operator can follow
+  # builder/reviewer progress in real time.  The structured JSON payload is
+  # captured separately via --output-last-message into $last_message_file.
   set +e
-  output="$(printf '%s\n' "$prompt_text" | "${cmd[@]}" 2>&1)"
+  printf '%s\n' "$prompt_text" | "${cmd[@]}"
   rc=$?
   set -e
 
   if [[ -n "$schema_file" ]]; then
     LAST_CODEX_OUTPUT="$(cat "$last_message_file" 2>/dev/null || true)"
     rm -f "$last_message_file"
-  else
-    LAST_CODEX_OUTPUT="$output"
-  fi
-
-  if [[ -n "$output" ]]; then
-    printf '%s\n' "$output"
   fi
 
   if [[ "$rc" -ne 0 ]]; then
