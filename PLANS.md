@@ -101,7 +101,7 @@ Operational source of truth:
 
 * `.agents/skills/execplan-event-index/references/event_skill_map.tsv`
 * each mapped event skill under `.agents/skills/execplan-event-*/`
-* `.agents/skills/execplan-sandbox-escalation/SKILL.md` and `references/allowed_command_prefixes.md`
+* `.agents/skills/execplan-sandbox-escalation/SKILL.md` and `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
 * `scripts/execplan_gate.sh`, `scripts/execplan_notify.sh`
 
 Templates (do not edit directly; edit copies in `.agents/skills/`): `assets/default-verification/execplan-event-*/`
@@ -168,27 +168,25 @@ Follow this sequence strictly.
 1. **Pre-creation gate** — run out-of-sandbox before creating the plan document:
    * `scripts/execplan_gate.sh --event execplan.pre_creation`
    * If reusing an existing plan: add `--plan <plan_md>` to record the attempt in that ledger.
-2. **Create or select plan** in `eternal-cycler-out/plans/active/`. For a new document, immediately run:
-   * `scripts/execplan_gate.sh --plan <plan_md> --event execplan.pre_creation`
-3. **Map actions** — for each `Progress` action, define: `action_id`, `mode`, `depends_on`, `file_locks`, `verify_events`, `worker_type`. `verify_events` must contain only `action.*` IDs registered in the event map. Lifecycle events must never appear in `verify_events`.
-4. **Execute actions** in dependency order. Mark each `[x]` immediately when complete. Out-of-sandbox commands must follow the sandbox escalation policy.
-5. **Verify after each action** — run `scripts/execplan_gate.sh` for each event in `verify_events`. The gate blocks progress on failure.
-6. **Record all gate attempts** in `## Verification Ledger`.
-7. **On failure** — retry up to 3 attempts. On escalation:
+2. **Create or select plan** in `eternal-cycler-out/plans/active/`. Write the full plan document, then for each `Progress` action define: `action_id`, `mode`, `depends_on`, `file_locks`, `verify_events`, `worker_type`. `verify_events` must contain only `action.*` IDs registered in the event map. Lifecycle events must never appear in `verify_events`.
+3. **Execute actions** in dependency order. Mark each `[x]` immediately when complete. Out-of-sandbox commands must follow the sandbox escalation policy.
+4. **Verify after each action** — run `scripts/execplan_gate.sh` for each event in `verify_events`. The gate blocks progress on failure.
+5. **Record all gate attempts** in `## Verification Ledger`.
+6. **On failure** — retry up to 3 attempts. On escalation:
    * document failure in `Progress`, `Verification Ledger`, and `Outcomes & Retrospective`
    * move the plan to `eternal-cycler-out/plans/completed/` as failed
    * stop; resume only via a new ExecPlan after operator feedback
-8. **Finalize plan** after all actions pass:
+7. **Finalize plan** after all actions pass:
    * update all living-document sections (`Progress`, `Surprises & Discoveries`, `Decision Log`, `Outcomes & Retrospective`)
    * note which verification scripts were referenced, created, modified, or left unchanged, and why
    * move the plan to `eternal-cycler-out/plans/completed/`
    * ensure all implementation commits are pushed
    * add tech-debt follow-up plans if needed
-9. **Post-completion gate** — run out-of-sandbox:
+8. **Post-completion gate** — run out-of-sandbox:
    * `scripts/execplan_gate.sh --plan <completed_plan_md> --event execplan.post_completion`
    * `execplan.post_completion` is validation-only: no `git add`, `git commit`, or `git push`
-   * Behavior on failure/escalation: same as step 7
-10. **Notify** (if configured):
+   * On failure: the gate script rolls the plan back to `eternal-cycler-out/plans/active/` before retrying. Use the current plan path (which may be in `active/` after rollback) when invoking the gate on retry. On escalation: same as step 6 — document failure, leave the plan in `eternal-cycler-out/plans/completed/` as failed, and stop.
+9. **Notify** (if configured):
     * `scripts/execplan_notify.sh --plan <completed_plan_md> --event execplan.post_completion --status pass`
     * Lifecycle complete.
 
