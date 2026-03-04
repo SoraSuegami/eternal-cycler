@@ -13,7 +13,7 @@ Usage:
   execplan_gate.sh --event <event_id> [--plan <plan_md>] [--attempt <n>]
 
 Notes:
-  --plan is optional only for execplan.pre_creation (no plan file exists yet).
+  --plan is not accepted by execplan.pre_creation (no plan file exists yet).
   All other events require --plan.
 USAGE
 }

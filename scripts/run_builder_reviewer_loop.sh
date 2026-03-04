@@ -17,6 +17,7 @@ Options:
   --max-reviewer-failures <n>        Max consecutive reviewer-phase failures (default: 3).
   --model-builder <model>            Optional model for builder codex runs.
   --model-reviewer <model>           Optional model for reviewer codex runs.
+  --min-agent-duration <secs>        Minimum seconds per builder/reviewer invocation (default: 3600).
   --help                             Show this help.
 USAGE
 }
@@ -493,9 +494,11 @@ EOF
 
 resolve_or_create_pr_for_branch() {
   local branch="$1"
-  local pr_title="$2"
-  local pr_body="$3"
+  local pr_title="${2:-}"
+  local pr_body="${3:-}"
   local open_json open_url create_out
+
+  [[ -n "$pr_title" ]] || pr_title="Auto: ${branch}"
 
   open_json="$(gh pr list --state open --head "$branch" --json url,updatedAt --limit 20 2>/dev/null || true)"
   open_url="$(jq -r '[.[]] | sort_by(.updatedAt) | reverse | .[0].url // empty' <<< "$open_json")"
