@@ -109,7 +109,8 @@ has_unresolved_latest_nonpass_event() {
     }
     END {
       for (e in latest) {
-        if (e == "execplan.post_completion") {
+        if (e == "execplan.pre_creation" || e == "execplan.post_creation" || \
+            e == "execplan.resume" || e == "execplan.post_completion") {
           continue
         }
         if (latest[e] == "fail" || latest[e] == "escalated") {
@@ -127,8 +128,9 @@ extract_pr_link_from_tracking_doc() {
   sed -n -E 's/^- PR link:[[:space:]]+(.+)$/\1/p' "$tracking_doc" | head -n1 | sed -E 's/[[:space:]]+$//'
 }
 
-if ! rg -q "event_id=execplan.pre_creation;.*status=pass" "$PLAN"; then
-  fail_validation "missing pass entry for execplan.pre_creation"
+if ! rg -q "event_id=execplan.post_creation;.*status=pass" "$PLAN" && \
+   ! rg -q "event_id=execplan.resume;.*status=pass" "$PLAN"; then
+  fail_validation "missing pass entry for execplan.post_creation or execplan.resume"
 fi
 
 if ! awk '
@@ -142,7 +144,8 @@ if ! awk '
         event=parts[i]
       }
     }
-    if (event != "" && event != "execplan.pre_creation" && event != "execplan.post_completion") {
+    if (event != "" && event != "execplan.pre_creation" && event != "execplan.post_creation" \
+        && event != "execplan.resume" && event != "execplan.post_completion") {
       found=1
     }
   }
@@ -197,10 +200,10 @@ commands+=("git status --short")
 git status --short >/dev/null
 
 if ! rg -q "<!-- execplan-start-untracked:start -->" "$PLAN"; then
-  fail_validation "missing execplan start untracked snapshot in plan; run pre-creation with --plan and retry"
+  fail_validation "missing execplan start untracked snapshot in plan; run execplan.post_creation and retry"
 fi
 if ! rg -q "<!-- execplan-start-tracked:start -->" "$PLAN"; then
-  fail_validation "missing execplan start tracked snapshot in plan; run pre-creation with --plan and retry"
+  fail_validation "missing execplan start tracked snapshot in plan; run execplan.post_creation and retry"
 fi
 
 echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"

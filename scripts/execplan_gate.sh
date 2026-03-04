@@ -2,7 +2,9 @@
 set -euo pipefail
 
 MAX_ATTEMPTS=3
-PRE_EVENT_ID="execplan.pre_creation"
+PRE_CREATION_EVENT_ID="execplan.pre_creation"
+POST_CREATION_EVENT_ID="execplan.post_creation"
+RESUME_EVENT_ID="execplan.resume"
 POST_EVENT_ID="execplan.post_completion"
 
 usage() {
@@ -11,8 +13,15 @@ Usage:
   execplan_gate.sh --event <event_id> [--plan <plan_md>] [--attempt <n>]
 
 Notes:
-  --plan is optional only for execplan.pre_creation.
+  --plan is optional only for execplan.pre_creation (no plan file exists yet).
+  All other events require --plan.
 USAGE
+}
+
+is_lifecycle_event() {
+  local e="$1"
+  [[ "$e" == "$PRE_CREATION_EVENT_ID" || "$e" == "$POST_CREATION_EVENT_ID" \
+    || "$e" == "$RESUME_EVENT_ID" || "$e" == "$POST_EVENT_ID" ]]
 }
 
 PLAN=""
@@ -50,7 +59,7 @@ if [[ -z "$EVENT" ]]; then
   exit 2
 fi
 
-if [[ "$EVENT" != "$PRE_EVENT_ID" && -z "$PLAN" ]]; then
+if [[ "$EVENT" != "$PRE_CREATION_EVENT_ID" && -z "$PLAN" ]]; then
   echo "--plan is required for event: $EVENT" >&2
   usage >&2
   exit 2
@@ -109,7 +118,7 @@ is_registered_event() {
 
 require_mandatory_lifecycle_events() {
   local required
-  for required in "$PRE_EVENT_ID" "$POST_EVENT_ID"; do
+  for required in "$PRE_CREATION_EVENT_ID" "$POST_CREATION_EVENT_ID" "$RESUME_EVENT_ID" "$POST_EVENT_ID"; do
     if ! is_registered_event "$required"; then
       echo "Mandatory lifecycle event missing from event map: $required" >&2
       exit 1
@@ -187,7 +196,11 @@ has_non_lifecycle_pass() {
           event=parts[i]
         }
       }
-      if (event != "" && event != "'$PRE_EVENT_ID'" && event != "'$POST_EVENT_ID'") {
+      if (event != "" \
+          && event != "'$PRE_CREATION_EVENT_ID'" \
+          && event != "'$POST_CREATION_EVENT_ID'" \
+          && event != "'$RESUME_EVENT_ID'" \
+          && event != "'$POST_EVENT_ID'") {
         found=1
       }
     }
@@ -455,7 +468,7 @@ COMMANDS=""
 FAILURE_SUMMARY=""
 NOTIFY_REFERENCE="not_requested"
 
-if [[ -z "$FINAL_STATUS" && "$EVENT" != "$PRE_EVENT_ID" ]]; then
+if [[ -z "$FINAL_STATUS" ]] && ! is_lifecycle_event "$EVENT"; then
   if unresolved="$(find_unresolved_nonpass_event "$EVENT")"; then
     FINAL_STATUS="fail"
     COMMANDS="gate prerequisite: unresolved non-pass event scan"
@@ -463,11 +476,11 @@ if [[ -z "$FINAL_STATUS" && "$EVENT" != "$PRE_EVENT_ID" ]]; then
   fi
 fi
 
-if [[ -z "$FINAL_STATUS" && "$EVENT" != "$PRE_EVENT_ID" ]]; then
-  if ! has_pass "$PRE_EVENT_ID"; then
+if [[ -z "$FINAL_STATUS" ]] && ! is_lifecycle_event "$EVENT"; then
+  if ! has_pass "$POST_CREATION_EVENT_ID" && ! has_pass "$RESUME_EVENT_ID"; then
     FINAL_STATUS="fail"
-    COMMANDS="gate prerequisite: require ${PRE_EVENT_ID} pass"
-    FAILURE_SUMMARY="missing pass evidence for ${PRE_EVENT_ID}"
+    COMMANDS="gate prerequisite: require ${POST_CREATION_EVENT_ID} or ${RESUME_EVENT_ID} pass"
+    FAILURE_SUMMARY="missing pass evidence for ${POST_CREATION_EVENT_ID} or ${RESUME_EVENT_ID}"
   fi
 fi
 
@@ -487,7 +500,7 @@ if [[ -z "$FINAL_STATUS" && "$EVENT" == "$POST_EVENT_ID" ]]; then
   fi
 fi
 
-if [[ -z "$FINAL_STATUS" && "$EVENT" != "$PRE_EVENT_ID" && "$EVENT" != "$POST_EVENT_ID" ]]; then
+if [[ -z "$FINAL_STATUS" ]] && ! is_lifecycle_event "$EVENT"; then
   if conflict="$(find_parallel_file_lock_conflict)"; then
     FINAL_STATUS="fail"
     COMMANDS="gate prerequisite: parallel file lock conflict scan"

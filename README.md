@@ -21,6 +21,8 @@ your-repo/
 │       │   └── assets/default-verification/   # default event skill templates
 │       ├── execplan-event-index/    # copied from default-verification by setup.sh
 │       ├── execplan-event-pre-creation/
+│       ├── execplan-event-post-creation/
+│       ├── execplan-event-resume/
 │       ├── execplan-event-post-completion/
 │       ├── execplan-event-action-docs-only/
 │       ├── execplan-event-action-tooling/
@@ -80,6 +82,8 @@ Setup output:
 [setup] Copying default verification skills to /path/to/your-repo/.agents/skills/
 [setup] OK   copied execplan-event-index -> .agents/skills/execplan-event-index
 [setup] OK   copied execplan-event-pre-creation -> .agents/skills/execplan-event-pre-creation
+[setup] OK   copied execplan-event-post-creation -> .agents/skills/execplan-event-post-creation
+[setup] OK   copied execplan-event-resume -> .agents/skills/execplan-event-resume
 [setup] OK   copied execplan-event-post-completion -> .agents/skills/execplan-event-post-completion
 [setup] OK   copied execplan-event-action-docs-only -> .agents/skills/execplan-event-action-docs-only
 [setup] OK   copied execplan-event-action-tooling -> .agents/skills/execplan-event-action-tooling

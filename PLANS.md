@@ -113,6 +113,8 @@ Event membership is data-driven by `.agents/skills/execplan-event-index/referenc
 Mandatory lifecycle events (must always be in the map):
 
 * `execplan.pre_creation`
+* `execplan.post_creation`
+* `execplan.resume`
 * `execplan.post_completion`
 
 Action events are flexible and may be added or removed without changing this policy text, as long as they are registered in the event map. To add a new event, add a skill directory under `.agents/skills/` and register it in the event map.
@@ -123,8 +125,8 @@ Gate command: `scripts/execplan_gate.sh --event <event_id> [--plan <plan_md>] [-
 
 The gate blocks lifecycle progress when any previously attempted event remains in `fail` or `escalated` state, and additionally:
 
-* rejects lifecycle events (`execplan.pre_creation`, `execplan.post_completion`) in `Progress` action `verify_events`
-* blocks `execplan.post_completion` until every action event in `verify_events` has at least one `pass` entry in the Verification Ledger
+* rejects lifecycle events (`execplan.pre_creation`, `execplan.post_creation`, `execplan.resume`, `execplan.post_completion`) in `Progress` action `verify_events`
+* blocks `execplan.post_completion` until `execplan.post_creation` or `execplan.resume` has a `pass` entry, and every action event in `verify_events` has at least one `pass` entry in the Verification Ledger
 
 ### Retry and escalation
 
@@ -163,16 +165,16 @@ Notification target is a GitHub PR comment.
 
 ## ExecPlan Lifecycle
 
-Follow this sequence strictly.
+Two paths depending on whether you are starting a new plan or resuming an existing one.
 
-1. **Pre-creation gate** — run out-of-sandbox before creating or selecting the plan document:
-   * **New plan** (no file yet): `scripts/execplan_gate.sh --event execplan.pre_creation`
-     Validates environment (branch, working tree). No ledger entry is written because the plan file does not exist yet. Continue to step 2.
-   * **Reused plan**: `scripts/execplan_gate.sh --plan <plan_md> --event execplan.pre_creation`
-     Validates environment and writes the pass entry to the Verification Ledger in one step. Skip step 2 and proceed directly to step 3.
-2. **Create plan and record pre-creation** (new plan only) — create the plan document in `eternal-cycler-out/plans/active/`, write the full plan, and define all `Progress` action metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `verify_events`, `worker_type`; `verify_events` must contain only `action.*` IDs; lifecycle events must never appear in `verify_events`). Then immediately run:
-   * `scripts/execplan_gate.sh --plan <plan_md> --event execplan.pre_creation`
-   This second call is required because step 1 ran without `--plan` and could not write to the ledger. It records the pass entry in the Verification Ledger and captures the start snapshot that `execplan.post_completion` requires.
+### New plan
+
+1. **Pre-creation gate** — run out-of-sandbox before creating the plan document:
+   `scripts/execplan_gate.sh --event execplan.pre_creation`
+   Validates environment (branch, working tree). No ledger entry is written because the plan file does not exist yet.
+2. **Create plan and post-creation gate** — create the plan document in `eternal-cycler-out/plans/active/`, write the full plan, and define all `Progress` action metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `verify_events`, `worker_type`; `verify_events` must contain only `action.*` IDs; lifecycle events must never appear in `verify_events`). Then immediately run:
+   `scripts/execplan_gate.sh --plan <plan_md> --event execplan.post_creation`
+   This records the start snapshot, creates the PR tracking doc, and writes the plan linkage metadata that `execplan.post_completion` requires.
 3. **Execute actions** in dependency order. Mark each `[x]` immediately when complete. Out-of-sandbox commands must follow the sandbox escalation policy.
 4. **Verify after each action** — run `scripts/execplan_gate.sh` for each event in `verify_events`. The gate blocks progress on failure.
 5. **Record all gate attempts** in `## Verification Ledger`.
@@ -191,8 +193,16 @@ Follow this sequence strictly.
    * `execplan.post_completion` is validation-only: no `git add`, `git commit`, or `git push`
    * On failure: the gate script rolls the plan back to `eternal-cycler-out/plans/active/` before retrying. Use the current plan path (which may be in `active/` after rollback) when invoking the gate on retry. On escalation: same as step 6 — document failure, leave the plan in `eternal-cycler-out/plans/completed/` as failed, and stop.
 9. **Notify** (if configured):
-    * `scripts/execplan_notify.sh --plan <completed_plan_md> --event execplan.post_completion --status pass`
-    * Lifecycle complete.
+   * `scripts/execplan_notify.sh --plan <completed_plan_md> --event execplan.post_completion --status pass`
+   * Lifecycle complete.
+
+### Resume existing plan
+
+1. **Select plan** from `eternal-cycler-out/plans/active/`. If there is operator feedback, update `Progress` actions and add `verify_events` entries for any newly registered events.
+2. **Resume gate** — run out-of-sandbox:
+   `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
+   Validates that the current branch matches the plan's recorded start branch, refreshes the PR tracking doc, and appends a resume record to the plan.
+3. Continue from step 3 of the new-plan path (execute actions, verify, finalize, post-completion gate, notify).
 
 ## Skeleton of a Good ExecPlan
 
