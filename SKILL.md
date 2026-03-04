@@ -1,11 +1,11 @@
 ---
 name: eternal-cycler
-description: A skill for automating the loop of interactions between the implementation builder agent and the implementation reviewer agent. When directly invoked by a human user, run this skill by default unless the user explicitly says not to.
+description: A skill for automating the loop of interactions between the implementation builder agent and the implementation reviewer agent.
 ---
 
 # Skill: eternal-cycler
 
-A skill for automating the loop of interactions between the implementation builder agent and the implementation reviewer agent. When directly invoked by a human user, run this skill by default unless the user explicitly says not to run it.
+A skill for automating the loop of interactions between the implementation builder agent and the implementation reviewer agent.
 
 ## Runtime scripts
 
