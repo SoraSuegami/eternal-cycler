@@ -168,7 +168,9 @@ Follow this sequence strictly.
 1. **Pre-creation gate** — run out-of-sandbox before creating the plan document:
    * `scripts/execplan_gate.sh --event execplan.pre_creation`
    * If reusing an existing plan: add `--plan <plan_md>` to record the attempt in that ledger.
-2. **Create or select plan** in `eternal-cycler-out/plans/active/`. Write the full plan document, then for each `Progress` action define: `action_id`, `mode`, `depends_on`, `file_locks`, `verify_events`, `worker_type`. `verify_events` must contain only `action.*` IDs registered in the event map. Lifecycle events must never appear in `verify_events`.
+2. **Create or select plan** in `eternal-cycler-out/plans/active/`. Write the full plan document and define all `Progress` action metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `verify_events`, `worker_type`; `verify_events` must contain only `action.*` IDs; lifecycle events must never appear in `verify_events`). Then record the pre-creation result in the plan's Verification Ledger and write the start snapshot:
+   * `scripts/execplan_gate.sh --plan <plan_md> --event execplan.pre_creation`
+   This second call is required even when step 1 already passed: step 1 validates the environment without a plan file; step 2 records the pass entry in the plan ledger and captures the start snapshot that `execplan.post_completion` requires. Re-running is safe and idempotent for reused plans.
 3. **Execute actions** in dependency order. Mark each `[x]` immediately when complete. Out-of-sandbox commands must follow the sandbox escalation policy.
 4. **Verify after each action** — run `scripts/execplan_gate.sh` for each event in `verify_events`. The gate blocks progress on failure.
 5. **Record all gate attempts** in `## Verification Ledger`.
