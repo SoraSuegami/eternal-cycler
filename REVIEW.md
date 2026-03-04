@@ -20,7 +20,10 @@ At the start of every review, reset reviewer posture completely:
 
 For the target PR, verify all of the following before returning a decision:
 
-1. **CI status.** GitHub CI is passing. If checks are still `pending`/`in_progress`, do not wait — return the reviewer payload immediately using current evidence.
+1. **CI status.** Inspect the current CI check states on the head commit.
+   - If any check has `failed` or `cancelled` state: set `approve_merge: false` and include the failing check names in `comment_body`.
+   - If all checks are `pending` or `in_progress` and all other mandatory checks (2–8) pass: set `approve_merge: true` immediately — do not wait for CI to complete.
+   - If all checks have passed: proceed normally.
 2. **Test quality.** If tests were added or changed, confirm they are aligned with the PR scope and are not superficial pass-only tests. Perform static analysis of test logic to verify substantive validation behavior.
 3. **Local tests.** Run impacted unit tests that may be affected by the PR but are not covered by CI for this change. Do not run integration tests unless explicitly instructed by the user.
 4. **Code hygiene.** Check for duplicated logic, unnecessary processing, dead private code paths, and obsolete fallback logic retained without current necessity.
@@ -55,7 +58,7 @@ Do not post GitHub comments directly. Return exactly one JSON object:
 - `comment_body` (string): full English review comment text to post.
 - `approve_merge` (boolean): `true` to approve merge, `false` to request another builder cycle.
 
-The loop script uses `codex exec --output-schema`; output must conform to this schema. Missing or invalid fields are contract violations and are treated as failed review-cycle output. Do not block on CI completion; return a compliant payload immediately.
+The loop script uses `codex exec --output-schema`; output must conform to this schema. Missing or invalid fields are contract violations and are treated as failed review-cycle output. Never block waiting for CI to finish — return a compliant payload immediately based on the current CI state as described in check 1.
 
 `approve_merge: true` is the success stop condition. `approve_merge: false` means the builder must continue with another implementation cycle.
 
