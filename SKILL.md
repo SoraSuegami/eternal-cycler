@@ -16,51 +16,101 @@ All paths are relative to this SKILL.md file's location (the eternal-cycler inst
 
 ## Required behavior
 
-1. Treat `run_builder_reviewer_loop.sh` as non-interactive.
-2. Resolve task input first, before any PR resume/new selection logic.
-3. If task input is missing, stop and ask the user to provide task text or a task file path. Do not create a fallback task.
-4. Never inspect `eternal-cycler-out/prs/active/*.md` or ask resume/new PR questions until task input has been resolved.
-5. Never invoke the loop script without `--task` or `--task-file`.
-6. If `--pr-url` is already provided by the user, pass it through unchanged.
-7. If `--pr-url` is not provided, inspect `eternal-cycler-out/prs/active/*.md` regardless of current local branch:
-   - If one or more active docs exist, ask whether to resume an existing tracked PR or create a new PR flow.
-   - If multiple active docs exist and user chooses resume, show a numbered list and ask which doc to use.
-8. Resume flow rule:
-   - Read `- branch name:` from the selected doc (fallback: title `# PR Tracking: <branch>`).
-   - Switch to that branch before invoking the loop:
+### Phase 0: Plan selection (always runs first)
+
+1. Before resolving task or PR, inspect `eternal-cycler-out/plans/active/` for existing plan documents (`.md` files).
+2. If one or more active plan documents exist:
+   - Ask the user: resume an existing plan, or start a new one?
+   - If multiple plans exist, show a numbered list (filename + first heading of each) and ask which to resume, or "new" to start fresh.
+3. If the user chooses to resume a plan, follow the **Resume plan flow** below.
+4. If the user chooses new (or no active plans exist), follow the **New plan flow** below.
+
+### Resume plan flow
+
+5. Read the selected plan document.
+6. Ask the user if there are any modifications to the plan (updated Progress actions, new verify_events, operator feedback). If modifications are provided, apply them to the plan document before continuing.
+7. Determine the branch:
+   - Read `execplan_start_branch:` from the plan.
+   - Switch to that branch:
      - if local branch exists: `git switch <branch>`;
      - else if `origin/<branch>` exists: `git switch -c <branch> --track origin/<branch>`;
      - else: stop and ask the user for guidance.
-   - Read `- PR link:` from the selected doc.
-   - If `PR link` is non-empty and not `(not available locally)`, pass `--pr-url <that_link>`.
-   - If `PR link` is missing, run without `--pr-url` on the switched branch.
-9. New PR flow rule (when user selects new PR flow, or when no active PR doc exists):
-   - Create and switch to a new branch before invoking the loop.
-   - Branch naming must be task-derived and deterministic:
-     - `task_seed`: first non-empty line from task text or task file.
-     - `task_slug`: lowercase, replace non `[a-z0-9]` with `-`, collapse repeated `-`, trim leading/trailing `-`, default `task`.
-     - `branch_name`: `feat/auto-${task_slug:0:40}-$(date -u +%Y%m%dT%H%M%S)`.
-     - If name already exists locally or on origin, append `-1`, `-2`, ... until unique.
-   - Run `git switch -c <branch_name>` and then run doctor+loop on that branch.
-10. Run doctor before loop using the same resolved target (`--pr-url` if available, otherwise `--head-branch <current_branch_after_switch>`).
-11. Forward loop output directly to caller stdout/stderr. Do not add tee/log-file capture.
-12. Each builder and reviewer agent invocation enforces a minimum runtime of 1 hour (3600 seconds). The loop script enforces this automatically by sleeping for the remaining time after the agent exits. Do not pass `--min-agent-duration 0` or any value below 3600 unless the user explicitly requests it.
+8. Determine the PR:
+   - Read `pr_tracking_doc:` from the plan → open that tracking document → read `- PR link:`.
+   - If `PR link` is non-empty and not `(not available locally)`:
+     - Check PR state: `gh pr view <url> --json state --jq '.state'`
+     - If state is `OPEN`: pass `--pr-url <that_link>` to the loop.
+     - If state is `MERGED` or `CLOSED`: do not pass `--pr-url` (a new PR will be created on the current branch by the loop).
+   - If `PR link` is missing or `pr_tracking_doc` is absent from the plan: do not pass `--pr-url`.
+9. Run the resume gate: `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
+10. Run doctor before loop using the same resolved target (`--pr-url` if determined in step 8, otherwise `--head-branch <current_branch_after_switch>`).
+11. Invoke the loop. Forward loop output directly to caller stdout/stderr.
+
+### New plan flow
+
+12. Run the pre-creation gate: `scripts/execplan_gate.sh --event execplan.pre_creation`
+13. Resolve task input: if task text or task file is not provided, stop and ask. Do not create a fallback task.
+14. Never invoke the loop script without `--task` or `--task-file`.
+15. If `--pr-url` is already provided by the user, pass it through unchanged and skip steps 16–18.
+16. Inspect `eternal-cycler-out/prs/active/*.md` regardless of current local branch:
+    - If one or more active docs exist, ask whether to resume an existing tracked PR or create a new PR flow.
+    - If multiple active docs exist and user chooses resume, show a numbered list and ask which doc to use.
+17. Resume PR flow rule (user chose to resume an existing tracked PR):
+    - Read `- branch name:` from the selected doc (fallback: title `# PR Tracking: <branch>`).
+    - Switch to that branch (same rules as step 7).
+    - Read `- PR link:` from the selected doc.
+    - If `PR link` is non-empty and not `(not available locally)`, pass `--pr-url <that_link>`.
+    - If `PR link` is missing, run without `--pr-url` on the switched branch.
+18. New PR flow rule (user chose new PR flow, or no active PR doc exists):
+    - Create and switch to a new branch before invoking the loop.
+    - Branch naming must be task-derived and deterministic:
+      - `task_seed`: first non-empty line from task text or task file.
+      - `task_slug`: lowercase, replace non `[a-z0-9]` with `-`, collapse repeated `-`, trim leading/trailing `-`, default `task`.
+      - `branch_name`: `feat/auto-${task_slug:0:40}-$(date -u +%Y%m%dT%H%M%S)`.
+      - If name already exists locally or on origin, append `-1`, `-2`, ... until unique.
+    - Run `git switch -c <branch_name>`.
+    - The builder agent is responsible for creating the ExecPlan document in `eternal-cycler-out/plans/active/` and running `execplan.post_creation` gate as part of its first action. (See PLANS.md lifecycle step 2.)
+19. Run doctor before loop using the same resolved target (`--pr-url` if available, otherwise `--head-branch <current_branch_after_switch>`).
+20. Invoke the loop. Forward loop output directly to caller stdout/stderr.
+
+### Always
+
+21. Treat `run_builder_reviewer_loop.sh` as non-interactive.
+22. Each builder and reviewer agent invocation enforces a minimum runtime of 1 hour (3600 seconds). The loop script enforces this automatically by sleeping for the remaining time after the agent exits. Do not pass `--min-agent-duration 0` or any value below 3600 unless the user explicitly requests it.
 
 ## Suggested invocation template
 
 Resolve the eternal-cycler installation path first (the directory containing this SKILL.md).
 Then invoke using that path as the prefix.
 
-If PR URL is resolved:
+Resume existing plan (PR still open):
 
     SKILL_ROOT=<path-to-eternal-cycler>
+    $SKILL_ROOT/scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume
+    git switch <execplan_start_branch>
+    $SKILL_ROOT/scripts/run_builder_reviewer_doctor.sh --pr-url <url>
+    $SKILL_ROOT/scripts/run_builder_reviewer_loop.sh --task-file <task.md> --pr-url <url>
+
+Resume existing plan (PR merged/closed — new PR will be created):
+
+    SKILL_ROOT=<path-to-eternal-cycler>
+    $SKILL_ROOT/scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume
+    git switch <execplan_start_branch>
+    $SKILL_ROOT/scripts/run_builder_reviewer_doctor.sh --head-branch <execplan_start_branch>
+    $SKILL_ROOT/scripts/run_builder_reviewer_loop.sh --task-file <task.md>
+
+New plan (PR URL provided or resolved from active PR docs):
+
+    SKILL_ROOT=<path-to-eternal-cycler>
+    $SKILL_ROOT/scripts/execplan_gate.sh --event execplan.pre_creation
     git switch <resume-branch-from-doc>
     $SKILL_ROOT/scripts/run_builder_reviewer_doctor.sh --pr-url <url>
     $SKILL_ROOT/scripts/run_builder_reviewer_loop.sh --task-file <task.md> --pr-url <url>
 
-If PR URL is not resolved:
+New plan (no PR URL — builder creates ExecPlan + runs post_creation gate):
 
     SKILL_ROOT=<path-to-eternal-cycler>
+    $SKILL_ROOT/scripts/execplan_gate.sh --event execplan.pre_creation
     git switch -c <task-derived-branch>
     $SKILL_ROOT/scripts/run_builder_reviewer_doctor.sh --head-branch <current_branch_after_switch>
     $SKILL_ROOT/scripts/run_builder_reviewer_loop.sh --task-file <task.md>
