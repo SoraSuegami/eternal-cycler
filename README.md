@@ -118,7 +118,8 @@ The skill is invoked as a Codex skill. When running Codex in your repository wit
 You can also invoke the loop directly:
 
 ```bash
-# New task (creates a new branch and PR)
+# New task (run from a feature branch; the loop uses the current branch)
+git switch -c feat/my-task
 .agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
   --task "add input validation to the login form"
 

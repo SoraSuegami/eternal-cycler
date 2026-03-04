@@ -36,9 +36,9 @@ If all checks pass, the returned payload must explicitly state that outcome and 
 
 ## Verification sources
 
-**Path note:** Gate and notify script paths are relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Verification skill and PR tracking paths are relative to the consuming repository root.
+**Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Verification skill and PR tracking paths are relative to the consuming repository root.
 
-Use repository-local event verification skills under `.agents/skills/execplan-event-*/`, with event resolution from `.agents/skills/execplan-event-index/references/event_skill_map.tsv`, and gate/notify scripts under `scripts/` to decide concrete commands and checks.
+Use repository-local event verification skills under `.agents/skills/execplan-event-*/`, with event resolution from `.agents/skills/execplan-event-index/references/event_skill_map.tsv`, and the gate script under `scripts/` to decide concrete commands and checks.
 
 ## Review cycle
 

@@ -28,6 +28,8 @@ Format (tab-separated):
 The registry must always include:
 
 - `execplan.pre_creation`
+- `execplan.post_creation`
+- `execplan.resume`
 - `execplan.post_completion`
 
 ## Evolution rule

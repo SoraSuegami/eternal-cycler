@@ -8,7 +8,7 @@ Usage:
   run_builder_reviewer_doctor.sh --help
 
 Checks:
-  - required CLIs (`git`, `gh`, `codex`, `jq`)
+  - required CLIs (`git`, `gh`, `codex`, `jq`, `rg`)
   - `gh auth status`
   - `codex login status`
   - PR metadata access (`gh pr view`) when `--pr-url` is provided
@@ -71,7 +71,7 @@ if [[ -z "$PR_URL" && -z "$HEAD_BRANCH" ]]; then
 fi
 
 missing=0
-for bin in git gh codex jq; do
+for bin in git gh codex jq rg; do
   if ! command -v "$bin" >/dev/null 2>&1; then
     echo "[FAIL] missing command: $bin" >&2
     missing=1
