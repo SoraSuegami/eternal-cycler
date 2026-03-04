@@ -732,8 +732,8 @@ Requirements:
 - Try up to 3 implementation attempts before declaring failure.
 - Return exactly one JSON object and nothing else:
   {\"plan_doc_filename\":\"<relative-plan-path>\",\"result\":\"success|failed_after_3_retries\",\"failure_reason\":\"<empty-if-success>\"}
-- Use `result=success` only when implementation is complete for this request.
-- Use `result=failed_after_3_retries` only after 3 attempts fail and include concrete failure reason in `failure_reason`."
+- Use result=success only when implementation is complete for this request.
+- Use result=failed_after_3_retries only after 3 attempts fail and include concrete failure reason in failure_reason."
 
 builder_schema_file="$(write_builder_output_schema)"
 if ! run_codex_prompt_capture "builder_initial" "$MODEL_BUILDER" "$initial_builder_prompt" "$builder_schema_file"; then
@@ -861,8 +861,8 @@ Requirements:
 - Try up to 3 implementation attempts before declaring failure.
 - Return exactly one JSON object and nothing else:
   {\"plan_doc_filename\":\"<relative-plan-path>\",\"result\":\"success|failed_after_3_retries\",\"failure_reason\":\"<empty-if-success>\"}
-- Use `result=success` only when implementation is complete for this request.
-- Use `result=failed_after_3_retries` only after 3 attempts fail and include concrete failure reason in `failure_reason`."
+- Use result=success only when implementation is complete for this request.
+- Use result=failed_after_3_retries only after 3 attempts fail and include concrete failure reason in failure_reason."
   else
     builder_followup_prompt="You are the BUILDER agent in an autonomous loop.
 
@@ -879,8 +879,8 @@ Requirements:
 - Try up to 3 implementation attempts before declaring failure.
 - Return exactly one JSON object and nothing else:
   {\"plan_doc_filename\":\"<relative-plan-path>\",\"result\":\"success|failed_after_3_retries\",\"failure_reason\":\"<empty-if-success>\"}
-- Use `result=success` only when implementation is complete for this request.
-- Use `result=failed_after_3_retries` only after 3 attempts fail and include concrete failure reason in `failure_reason`."
+- Use result=success only when implementation is complete for this request.
+- Use result=failed_after_3_retries only after 3 attempts fail and include concrete failure reason in failure_reason."
   fi
 
   builder_schema_file="$(write_builder_output_schema)"
