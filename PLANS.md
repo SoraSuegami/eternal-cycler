@@ -73,11 +73,11 @@ Each milestone must be independently verifiable and incrementally implement the 
 
 When creating a new plan markdown file, place it by status:
 
-* Active plans must be created in `assets/plans/active/`.
-* Completed plans must be moved to `assets/plans/completed/`.
-* Remaining technical debt plans must be created or moved to `assets/plans/tech-debt/`.
+* Active plans must be created in `eternal-cycler-out/plans/active/`.
+* Completed plans must be moved to `eternal-cycler-out/plans/completed/`.
+* Remaining technical debt plans must be created or moved to `eternal-cycler-out/plans/tech-debt/`.
 
-Any markdown file in `assets/plans/tech-debt/` must include links to the related plan markdown files (for example, active or completed plans that introduced, mitigated, or depend on that debt). The links must be explicit repository-relative markdown links so a reader can navigate directly.
+Any markdown file in `eternal-cycler-out/plans/tech-debt/` must include links to the related plan markdown files (for example, active or completed plans that introduced, mitigated, or depend on that debt). The links must be explicit repository-relative markdown links so a reader can navigate directly.
 
 ## Action-Level Parallel Execution
 
@@ -107,27 +107,30 @@ At the beginning of the ExecPlan, include a short repository-document context pa
 
 For verification, follow this rule: every ExecPlan must identify the event-index map, list exact verification commands planned, and record commands actually run in `Verification Ledger`. Update this document only when long-lived verification policy changes. Update repository-local verification scripts when event execution procedures or event mappings change.
 
-Before moving an ExecPlan from `assets/plans/active/` to `assets/plans/completed/`, the plan must include an explicit note of what verification scripts were referenced, created, modified, or left unchanged, and why.
+Before moving an ExecPlan from `eternal-cycler-out/plans/active/` to `eternal-cycler-out/plans/completed/`, the plan must include an explicit note of what verification scripts were referenced, created, modified, or left unchanged, and why.
 
 ## Integrated Verification Policy
 
 Verification policy is defined in this section. Event execution procedures are defined by repository-local skills and scripts.
 
-**Path resolution note:** All paths in this section are relative to this file's location (the eternal-cycler installation root). When this repository is installed as a subtree or skill at a non-root path (e.g. `.agents/eternal-cycler/`), prefix every path with that installation prefix. The parent loop script injects the correct prefix into your prompt under "Path context".
+**Path resolution note:** Paths to policy docs, gate, and notify scripts are relative to the eternal-cycler installation root (injected into your prompt as `Path context`). Paths to verification skills, plans, and PR tracking are relative to the consuming repository root. The parent loop script makes all resolved paths explicit under "Path context".
 
 Operational verification source of truth:
 
-* `assets/verification/execplan-event-index/SKILL.md`
-* `assets/verification/execplan-event-index/references/event_skill_map.tsv`
-* each mapped event skill under `assets/verification/execplan-event-*/`
-* `assets/verification/execplan-sandbox-escalation/SKILL.md`
-* `assets/verification/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
+* `.agents/skills/execplan-event-index/SKILL.md`
+* `.agents/skills/execplan-event-index/references/event_skill_map.tsv`
+* each mapped event skill under `.agents/skills/execplan-event-*/`
+* `.agents/skills/execplan-sandbox-escalation/SKILL.md`
+* `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
 * `scripts/execplan_gate.sh`
 * `scripts/execplan_notify.sh`
 
+Default verification skill templates (do not edit these directly; edit the copies in `.agents/skills/`):
+* `assets/default-verification/execplan-event-*/`
+
 ### Event model
 
-Event membership is data-driven by `assets/verification/execplan-event-index/references/event_skill_map.tsv`.
+Event membership is data-driven by `.agents/skills/execplan-event-index/references/event_skill_map.tsv`.
 
 The following lifecycle events are mandatory and must always exist in that map:
 
@@ -157,7 +160,7 @@ For each event:
 * max attempts: 3
 
 If the attempt bound is exceeded, the gate must mark the event as `escalated`, stop lifecycle progress, and require blocker reporting.
-After escalation, the current plan must be force-closed as failed in `assets/plans/completed/` with explicit failure documentation, and retries must continue only through a new active ExecPlan created from human-operator feedback that references the failed plan.
+After escalation, the current plan must be force-closed as failed in `eternal-cycler-out/plans/completed/` with explicit failure documentation, and retries must continue only through a new active ExecPlan created from human-operator feedback that references the failed plan.
 
 ### Notification policy
 
@@ -173,10 +176,10 @@ Notification target is GitHub PR comment.
 
 When executing ExecPlan actions or verification events, apply this out-of-sandbox command policy:
 
-* `assets/verification/execplan-sandbox-escalation/SKILL.md` is mandatory for all out-of-sandbox command execution,
-* invoke that skill and read `assets/verification/execplan-sandbox-escalation/references/allowed_command_prefixes.md` before requesting or running any out-of-sandbox command,
+* `.agents/skills/execplan-sandbox-escalation/SKILL.md` is mandatory for all out-of-sandbox command execution,
+* invoke that skill and read `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md` before requesting or running any out-of-sandbox command,
 * prefer implementing the needed function with already allowed prefixes,
-* if existing prefixes cannot safely realize the function, request human operator approval for a new out-of-sandbox command and add a safely generalized prefix entry to `assets/verification/execplan-sandbox-escalation/references/allowed_command_prefixes.md`.
+* if existing prefixes cannot safely realize the function, request human operator approval for a new out-of-sandbox command and add a safely generalized prefix entry to `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`.
 * if this mandatory skill step is not completed, do not execute out-of-sandbox commands and treat the state as a policy violation that blocks lifecycle progress until corrected.
 
 ### Evidence policy
@@ -202,23 +205,23 @@ Agents must strictly follow this lifecycle to create, execute, and complete an E
    * `scripts/execplan_gate.sh --event execplan.pre_creation`
    * Execute this lifecycle gate command out-of-sandbox.
    * If you are reusing an existing plan document, run with `--plan <plan_md>` so the attempt is recorded directly in that plan ledger.
-2. Create or select one target ExecPlan document under `assets/plans/active/`.
+2. Create or select one target ExecPlan document under `eternal-cycler-out/plans/active/`.
    * For a newly created plan document, run `scripts/execplan_gate.sh --plan <plan_md> --event execplan.pre_creation` immediately so the plan ledger contains explicit pre-creation pass evidence required by later gate checks.
 3. Before action execution, map each `Progress` action to metadata and verification events from the event-index map:
    * required metadata: `action_id`, `mode`, `depends_on`, `file_locks`, `verify_events`, `worker_type`,
-   * `verify_events` values must be `action.*` event IDs registered in `assets/verification/execplan-event-index/references/event_skill_map.tsv`,
+   * `verify_events` values must be `action.*` event IDs registered in `.agents/skills/execplan-event-index/references/event_skill_map.tsv`,
    * lifecycle events (`execplan.pre_creation`, `execplan.post_completion`) must never appear in `Progress` action `verify_events`.
 4. Execute actions in dependency order. Delegate only `mode=parallel` actions to sub agents, and keep all status updates in the same ExecPlan.
    * As soon as one action is completed, update that action's checkbox in `Progress` to `[x]` before starting the next action.
-   * Any out-of-sandbox command execution during action work or verification must follow the `Sandbox escalation policy` in this document and the mandatory skill `assets/verification/execplan-sandbox-escalation/SKILL.md`.
+   * Any out-of-sandbox command execution during action work or verification must follow the `Sandbox escalation policy` in this document and the mandatory skill `.agents/skills/execplan-sandbox-escalation/SKILL.md`.
 5. After each action, run `scripts/execplan_gate.sh` for each mapped action event in `verify_events`. The gate must block lifecycle progress when verification fails or remains unexecuted.
 6. Record every gate attempt in the plan's `Verification Ledger` section.
 7. On failure, run auto-fix and retry loops through the gate until pass, within policy bound (`3 tries`).
-   * If the same event fails three consecutive attempts, record `escalated`, document failure explicitly in the current plan (`Progress`, `Verification Ledger`, and `Outcomes & Retrospective`), and force-close that plan as failed by moving it to `assets/plans/completed/`.
-   * After force-closing the failed plan, stop execution of that plan. Resume work only after human operator feedback by creating a new ExecPlan in `assets/plans/active/` that references the failed plan and describes the retry scope.
+   * If the same event fails three consecutive attempts, record `escalated`, document failure explicitly in the current plan (`Progress`, `Verification Ledger`, and `Outcomes & Retrospective`), and force-close that plan as failed by moving it to `eternal-cycler-out/plans/completed/`.
+   * After force-closing the failed plan, stop execution of that plan. Resume work only after human operator feedback by creating a new ExecPlan in `eternal-cycler-out/plans/active/` that references the failed plan and describes the retry scope.
 8. After all actions and action-level verification events pass, finalize plan document state first:
    * update progress/outcomes/ledger sections,
-   * move the plan to `assets/plans/completed/`,
+   * move the plan to `eternal-cycler-out/plans/completed/`,
    * ensure required implementation commits are already pushed before entering post-completion verification,
    * add technical-debt follow-up plans when needed.
 9. Run post-completion verification:
@@ -226,7 +229,7 @@ Agents must strictly follow this lifecycle to create, execute, and complete an E
    * Execute this lifecycle gate command out-of-sandbox.
    * `execplan.post_completion` is lifecycle-only and must not be listed in any `Progress` action `verify_events`.
    * `execplan.post_completion` is validation-only and must not run `git add`, `git commit`, or `git push`.
-   * Post-completion operational behavior is defined only in `assets/verification/execplan-event-post-completion/SKILL.md` and its script.
+   * Post-completion operational behavior is defined only in `.agents/skills/execplan-event-post-completion/SKILL.md` and its script.
    * If post-completion verification fails and attempts remain, follow the skill-defined rollback/remediation behavior, then rerun post-completion.
    * If post-completion reaches three consecutive failures, apply step 7 escalation handling (force-close failed plan, then restart with a new operator-seeded ExecPlan).
 10. If configured, post one final notification PR comment after all validations pass:

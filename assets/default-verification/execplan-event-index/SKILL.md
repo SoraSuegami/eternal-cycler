@@ -32,12 +32,12 @@ The registry must always include:
 
 ## Evolution rule
 
-Action events may be added/removed by editing `references/event_skill_map.tsv` and creating/removing corresponding event skill directories under `assets/verification/`.
+Action events may be added/removed by editing `references/event_skill_map.tsv` (at `.agents/skills/execplan-event-index/references/event_skill_map.tsv` in the consuming repo) and creating/removing corresponding event skill directories under `.agents/skills/`.
 
 ## Out-of-sandbox command rule
 
-When running event scripts, if a command requires out-of-sandbox execution, `assets/verification/execplan-sandbox-escalation/SKILL.md` is mandatory and must be used first:
+When running event scripts, if a command requires out-of-sandbox execution, `.agents/skills/execplan-sandbox-escalation/SKILL.md` is mandatory and must be used first:
 
-- check `assets/verification/execplan-sandbox-escalation/references/allowed_command_prefixes.md`,
+- check `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`,
 - prefer existing prefixes whenever feasible,
 - if a new command is required, request human approval and add a safely generalized prefix to that reference file.

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# SUBMODULE_ROOT: eternal-cycler installation root (3 levels up from this script).
-# Works correctly whether eternal-cycler is the repo root or a subtree.
-SUBMODULE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+# ETERNAL_CYCLER_ROOT and REPO_ROOT are exported by execplan_gate.sh before calling this script.
+# Fall back to git-based resolution if invoked directly (e.g. during testing).
+ETERNAL_CYCLER_ROOT="${ETERNAL_CYCLER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
 
 PLAN=""
 while [[ $# -gt 0 ]]; do
@@ -30,9 +31,9 @@ if [[ -z "$PLAN" || ! -f "$PLAN" ]]; then
   exit 1
 fi
 
-commands="bash -n ${SUBMODULE_ROOT}/scripts/*.sh ${SUBMODULE_ROOT}/assets/verification/execplan-event-*/scripts/*.sh"
+commands="bash -n ${ETERNAL_CYCLER_ROOT}/scripts/*.sh ${REPO_ROOT}/.agents/skills/execplan-event-*/scripts/*.sh"
 
-if ! bash -n "${SUBMODULE_ROOT}"/scripts/*.sh "${SUBMODULE_ROOT}"/assets/verification/execplan-event-*/scripts/*.sh; then
+if ! bash -n "${ETERNAL_CYCLER_ROOT}"/scripts/*.sh "${REPO_ROOT}"/.agents/skills/execplan-event-*/scripts/*.sh; then
   echo "COMMANDS=$commands"
   echo "FAILURE_SUMMARY=tooling script syntax check failed"
   echo "STATUS=fail"
@@ -42,3 +43,4 @@ fi
 echo "COMMANDS=$commands"
 echo "FAILURE_SUMMARY=none"
 echo "STATUS=pass"
+

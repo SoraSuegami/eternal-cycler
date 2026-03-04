@@ -70,11 +70,20 @@ fi
 # Resolved from the script's own location so it works correctly whether eternal-cycler is used
 # as a git subtree, a plain copy, or called directly from its own checkout.
 SUBMODULE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# REPO_ROOT: root of the consuming git repository (may equal SUBMODULE_ROOT when eternal-cycler
+# is checked out directly; differs when installed as a subtree under a consuming repo).
+REPO_ROOT="$(git -C "$SUBMODULE_ROOT" rev-parse --show-toplevel)"
 
-# Event map: verification scripts shipped with eternal-cycler.
-# To add repo-specific action events when using eternal-cycler as a subtree, add entries
-# to this file and create matching scripts under assets/verification/.
-EVENT_MAP="$SUBMODULE_ROOT/assets/verification/execplan-event-index/references/event_skill_map.tsv"
+# Export so event scripts can locate both roots without recomputing them.
+export ETERNAL_CYCLER_ROOT="$SUBMODULE_ROOT"
+export REPO_ROOT
+
+# Event map: read from the consuming repo's .agents/skills/ directory so that new events
+# added by the consuming repo are automatically picked up.
+# Default verification skills are copied to .agents/skills/ by setup.sh.
+# To add new action events, add entries to .agents/skills/execplan-event-index/references/event_skill_map.tsv
+# and create matching scripts under .agents/skills/<skill-dir>/.
+EVENT_MAP="$REPO_ROOT/.agents/skills/execplan-event-index/references/event_skill_map.tsv"
 
 if [[ ! -f "$EVENT_MAP" ]]; then
   echo "Event map not found: $EVENT_MAP" >&2
@@ -120,7 +129,7 @@ resolve_event_script() {
 
   skill_dir="${row%%$'\t'*}"
   script_rel="${row#*$'\t'}"
-  script_abs="$SUBMODULE_ROOT/assets/verification/$skill_dir/$script_rel"
+  script_abs="$REPO_ROOT/.agents/skills/$skill_dir/$script_rel"
 
   if [[ ! -x "$script_abs" ]]; then
     echo "Event script is missing or not executable: $script_abs" >&2

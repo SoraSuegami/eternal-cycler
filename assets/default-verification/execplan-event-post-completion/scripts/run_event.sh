@@ -31,8 +31,11 @@ if [[ "$PLAN" == /* ]]; then
   plan_is_abs=1
 fi
 
+# REPO_ROOT: root of the consuming git repository.
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+
 commands=()
-commands+=("rg -n assets/prs/active/|assets/prs/completed/ <plan>")
+commands+=("rg -n eternal-cycler-out/prs/active/|eternal-cycler-out/prs/completed/ <plan>")
 
 pr_doc_path=""
 rollback_plan_path=""
@@ -60,8 +63,8 @@ to_plan_style_path() {
 rollback_to_active() {
   local target_rel target_path
 
-  if [[ "$PLAN" == assets/plans/completed/* || "$PLAN" == */assets/plans/completed/* ]]; then
-    target_rel="assets/plans/active/$(basename "$PLAN")"
+  if [[ "$PLAN" == eternal-cycler-out/plans/completed/* || "$PLAN" == */eternal-cycler-out/plans/completed/* ]]; then
+    target_rel="eternal-cycler-out/plans/active/$(basename "$PLAN")"
     target_path="$(to_plan_style_path "$target_rel")"
     if [[ "$PLAN" != "$target_path" && -f "$PLAN" ]]; then
       mkdir -p "$(dirname "$target_path")"
@@ -148,13 +151,13 @@ if ! awk '
   fail_validation "missing pass entry for non-lifecycle event"
 fi
 
-pr_doc_path="$(rg -o "assets/prs/(active|completed)/[^ )\t]+\\.md" "$PLAN" | head -n1 || true)"
+pr_doc_path="$(rg -o "eternal-cycler-out/prs/(active|completed)/[^ )\t]+\\.md" "$PLAN" | head -n1 || true)"
 if [[ -z "$pr_doc_path" ]]; then
   fail_validation "missing PR tracking document linkage in plan"
 fi
 
-if [[ ! -f "$pr_doc_path" && "$pr_doc_path" == assets/prs/active/* ]]; then
-  fallback_path="assets/prs/completed/$(basename "$pr_doc_path")"
+if [[ ! -f "$pr_doc_path" && "$pr_doc_path" == eternal-cycler-out/prs/active/* ]]; then
+  fallback_path="eternal-cycler-out/prs/completed/$(basename "$pr_doc_path")"
   if [[ -f "$fallback_path" ]]; then
     commands+=("fallback pr doc $pr_doc_path -> $fallback_path")
     pr_doc_path="$fallback_path"

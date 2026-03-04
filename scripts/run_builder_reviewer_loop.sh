@@ -384,7 +384,7 @@ find_pr_tracking_doc() {
   local pr_url="$1"
   local dir found_path
 
-  for dir in assets/prs/active assets/prs/completed; do
+  for dir in eternal-cycler-out/prs/active eternal-cycler-out/prs/completed; do
     [[ -d "$dir" ]] || continue
     found_path="$(rg -l -F -- "- PR link: $pr_url" "$dir" 2>/dev/null | head -n1 || true)"
     if [[ -n "$found_path" ]]; then
@@ -403,8 +403,8 @@ finalize_pr_tracking_doc() {
   local source_path default_active_path default_completed_path completed_path moved_from
   local now_utc
 
-  default_active_path="assets/prs/active/pr_${target_branch//\//_}.md"
-  default_completed_path="assets/prs/completed/pr_${target_branch//\//_}.md"
+  default_active_path="eternal-cycler-out/prs/active/pr_${target_branch//\//_}.md"
+  default_completed_path="eternal-cycler-out/prs/completed/pr_${target_branch//\//_}.md"
 
   source_path="$(find_pr_tracking_doc "$pr_url" || true)"
   if [[ -z "$source_path" ]]; then
@@ -430,10 +430,10 @@ EOF
     fi
   fi
 
-  if [[ "$source_path" == assets/prs/completed/* ]]; then
+  if [[ "$source_path" == eternal-cycler-out/prs/completed/* ]]; then
     completed_path="$source_path"
-  elif [[ "$source_path" == assets/prs/active/* ]]; then
-    completed_path="assets/prs/completed/$(basename "$source_path")"
+  elif [[ "$source_path" == eternal-cycler-out/prs/active/* ]]; then
+    completed_path="eternal-cycler-out/prs/completed/$(basename "$source_path")"
   else
     completed_path="$default_completed_path"
   fi
@@ -657,18 +657,16 @@ SUBMODULE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SUBMODULE_REL="$(realpath --relative-to="$WORKDIR" "$SUBMODULE_ROOT")"
 
 # Explicit path context injected into every agent prompt.
-# All relative paths in PLANS.md / REVIEW.md are relative to SUBMODULE_REL,
-# not the repository root. This block makes those paths unambiguous for the agent.
 PATH_CONTEXT="Path context (all paths are from the repository root):
 - Policy docs:           ${SUBMODULE_REL}/PLANS.md, ${SUBMODULE_REL}/REVIEW.md
 - ExecPlan gate:         ${SUBMODULE_REL}/scripts/execplan_gate.sh
 - ExecPlan notify:       ${SUBMODULE_REL}/scripts/execplan_notify.sh
-- Verification dir:      ${SUBMODULE_REL}/assets/verification/execplan-event-*/
-- Event index map:       ${SUBMODULE_REL}/assets/verification/execplan-event-index/references/event_skill_map.tsv
-- Sandbox policy:        ${SUBMODULE_REL}/assets/verification/execplan-sandbox-escalation/SKILL.md
-- Plans dir:             ${SUBMODULE_REL}/assets/plans/
-- PR tracking dir:       ${SUBMODULE_REL}/assets/prs/
-All relative paths mentioned inside the policy docs above are relative to ${SUBMODULE_REL}/, not the repository root."
+- Verification skills:   .agents/skills/execplan-event-*/  (copied from ${SUBMODULE_REL}/assets/default-verification/ by setup.sh)
+- Event index map:       .agents/skills/execplan-event-index/references/event_skill_map.tsv
+- Sandbox policy:        .agents/skills/execplan-sandbox-escalation/SKILL.md
+- Plans dir:             eternal-cycler-out/plans/
+- PR tracking dir:       eternal-cycler-out/prs/
+Paths to policy docs, gate, and notify scripts are relative to ${SUBMODULE_REL}/. Paths to verification skills, plans, and PR tracking are relative to the repository root."
 
 if [[ -n "$(git ls-files -u)" ]]; then
   die "unmerged paths detected; resolve conflicts first"

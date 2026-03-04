@@ -24,6 +24,10 @@ if [[ -n "$PLAN" && -f "$PLAN" ]]; then
   has_plan_file=1
 fi
 
+# REPO_ROOT: root of the consuming git repository (identical to ETERNAL_CYCLER_ROOT when
+# eternal-cycler is the repo root; parent repo root when installed as a subtree/skill).
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+
 commands=()
 commands+=("git branch --show-current")
 commands+=("git status --short")
@@ -122,7 +126,7 @@ fi
 branch_after="$(git branch --show-current)"
 status_after="$(git status --short || true)"
 
-tracking_path="${EXECPLAN_PR_TRACKING_PATH:-assets/prs/active/pr_${branch_after//\//_}.md}"
+tracking_path="${EXECPLAN_PR_TRACKING_PATH:-${REPO_ROOT}/eternal-cycler-out/prs/active/pr_${branch_after//\//_}.md}"
 commands+=("mkdir -p $(dirname "$tracking_path")")
 mkdir -p "$(dirname "$tracking_path")"
 

@@ -19,10 +19,10 @@ All paths are relative to this SKILL.md file's location (the eternal-cycler inst
 1. Treat `run_builder_reviewer_loop.sh` as non-interactive.
 2. Resolve task input first, before any PR resume/new selection logic.
 3. If task input is missing, stop and ask the user to provide task text or a task file path. Do not create a fallback task.
-4. Never inspect `assets/prs/active/*.md` or ask resume/new PR questions until task input has been resolved.
+4. Never inspect `eternal-cycler-out/prs/active/*.md` or ask resume/new PR questions until task input has been resolved.
 5. Never invoke the loop script without `--task` or `--task-file`.
 6. If `--pr-url` is already provided by the user, pass it through unchanged.
-7. If `--pr-url` is not provided, inspect `assets/prs/active/*.md` regardless of current local branch:
+7. If `--pr-url` is not provided, inspect `eternal-cycler-out/prs/active/*.md` regardless of current local branch:
    - If one or more active docs exist, ask whether to resume an existing tracked PR or create a new PR flow.
    - If multiple active docs exist and user chooses resume, show a numbered list and ask which doc to use.
 8. Resume flow rule:

@@ -30,15 +30,15 @@ For the target PR, verify all of the following:
 
 ## Verification source rule
 
-**Path resolution note:** All paths in this section are relative to this file's location (the eternal-cycler installation root). When this repository is installed as a subtree or skill at a non-root path (e.g. `.agents/eternal-cycler/`), prefix every path with that installation prefix. The parent loop script injects the correct prefix into your prompt under "Path context".
+**Path resolution note:** Paths to gate and notify scripts are relative to the eternal-cycler installation root (injected into your prompt as `Path context`). Paths to verification skills and PR tracking are relative to the consuming repository root.
 
-Use repository-local event verification skills under `assets/verification/execplan-event-*/`, with event resolution from `assets/verification/execplan-event-index/references/event_skill_map.tsv`, and gate/notify scripts under `scripts/` to decide concrete commands and checks.
+Use repository-local event verification skills under `.agents/skills/execplan-event-*/`, with event resolution from `.agents/skills/execplan-event-index/references/event_skill_map.tsv`, and gate/notify scripts under `scripts/` to decide concrete commands and checks.
 
 Do not trust documentation claims blindly. Validate by reading code and running appropriate checks.
 
 ## Review cycle
 
-A user may identify a PR by URL, title, a file under `assets/prs/`, or a deictic reference such as "this PR".
+A user may identify a PR by URL, title, a file under `eternal-cycler-out/prs/`, or a deictic reference such as "this PR".
 
 1. Identify the intended PR using reliable signals (for example `gh pr` queries and repository PR tracking docs).
 2. Ask the user for clarification only when confidence in PR identification is very low (approximately 10% confidence), and avoid unnecessary confirmation requests.

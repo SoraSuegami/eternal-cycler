@@ -10,7 +10,7 @@ Executes the "before main ExecPlan creation" workflow:
 - capture branch/status/log context,
 - query PR context when `gh` is available,
 - enforce branch-switch rules (`main` or scope-misaligned work must switch),
-- create/update PR tracking metadata under `assets/prs/active/`,
+- create/update PR tracking metadata under `eternal-cycler-out/prs/active/`,
 - ensure the ExecPlan contains PR tracking path and start branch/commit linkage,
 - capture a start snapshot of tracked/untracked working-tree deltas (hash + path) in the plan when `--plan` is provided.
 
@@ -18,7 +18,7 @@ Dynamic controls:
 
 - `EXECPLAN_SCOPE_ALIGNMENT=aligned|not_aligned|auto`
 - `EXECPLAN_NEW_BRANCH=<type/scope>` when branch switch is required
-- `EXECPLAN_PR_TRACKING_PATH=assets/prs/active/<file>.md`
+- `EXECPLAN_PR_TRACKING_PATH=eternal-cycler-out/prs/active/<file>.md`
 - `EXECPLAN_MANUAL_PR_URL=<url>` when PR metadata must be injected explicitly
 
 Execution policy:

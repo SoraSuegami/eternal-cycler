@@ -8,7 +8,7 @@ Before requesting a new out-of-sandbox command approval, verify whether one of t
 
 Policy note: `gh` prefixed commands are expected to run out-of-sandbox by default for stable GitHub API access.
 
-Path note: prefixes beginning with `scripts/` or `.agents/` are relative to the eternal-cycler installation root (injected into your prompt as `Path context`). When eternal-cycler is installed as a subtree at a non-root path (e.g. `.agents/eternal-cycler/`), prefix those entries with that installation path.
+Path note: prefixes beginning with `scripts/` are relative to the eternal-cycler installation root (injected into your prompt as `Path context`). Prefixes beginning with `eternal-cycler-out/` or `.agents/` are relative to the consuming repository root.
 
 - `git status --short`
 - `git branch --show-current`
@@ -23,8 +23,8 @@ Path note: prefixes beginning with `scripts/` or `.agents/` are relative to the 
 - `gh pr status`
 - `gh pr edit`
 - `gh api graphql`
-- `mv assets/prs/active/`
-- `mkdir -p assets/prs/active`
+- `mv eternal-cycler-out/prs/active/`
+- `mkdir -p eternal-cycler-out/prs/active`
 - `scripts/execplan_gate.sh --event execplan.pre_creation`
 - `scripts/execplan_gate.sh --plan`
 - `scripts/run_builder_reviewer_doctor.sh`
