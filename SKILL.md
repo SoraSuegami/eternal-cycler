@@ -103,16 +103,16 @@ Then invoke using that path as the prefix.
 Resume existing plan (PR still open):
 
     SKILL_ROOT=<path-to-eternal-cycler>
-    $SKILL_ROOT/scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume
     git switch <execplan_start_branch>
+    $SKILL_ROOT/scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume
     $SKILL_ROOT/scripts/run_builder_reviewer_doctor.sh --pr-url <url>
     $SKILL_ROOT/scripts/run_builder_reviewer_loop.sh --task-file <task.md> --pr-url <url>
 
 Resume existing plan (PR merged/closed — new PR will be created):
 
     SKILL_ROOT=<path-to-eternal-cycler>
-    $SKILL_ROOT/scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume
     git switch <execplan_start_branch>
+    $SKILL_ROOT/scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume
     $SKILL_ROOT/scripts/run_builder_reviewer_doctor.sh --head-branch <execplan_start_branch>
     $SKILL_ROOT/scripts/run_builder_reviewer_loop.sh --task-file <task.md>
 

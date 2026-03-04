@@ -674,7 +674,7 @@ for n in "$MAX_ITERATIONS" "$MAX_BUILDER_CLEANUP_RETRIES" "$MAX_REVIEWER_FAILURE
   is_positive_int "$n" || die "numeric options must be positive integers"
 done
 
-for cmd in git gh codex jq; do
+for cmd in git gh codex jq rg; do
   require_cmd "$cmd"
 done
 

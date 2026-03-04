@@ -65,6 +65,12 @@ if [[ "$EVENT" != "$PRE_CREATION_EVENT_ID" && -z "$PLAN" ]]; then
   exit 2
 fi
 
+if [[ "$EVENT" == "$PRE_CREATION_EVENT_ID" && -n "$PLAN" ]]; then
+  echo "--plan is not accepted for event: $EVENT (plan file does not exist yet)" >&2
+  usage >&2
+  exit 2
+fi
+
 if [[ -n "$PLAN" && ! -f "$PLAN" ]]; then
   echo "Plan file not found: $PLAN" >&2
   exit 1
