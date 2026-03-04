@@ -95,14 +95,14 @@ An action is parallelizable only when all `depends_on` actions are complete and 
 
 Verification is enforced by the gate script and event-local skills.
 
-**Path note:** Gate and notify script paths are relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Verification skill, plan, and PR tracking paths are relative to the consuming repository root.
+**Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Verification skill, plan, and PR tracking paths are relative to the consuming repository root.
 
 Operational source of truth:
 
 * `.agents/skills/execplan-event-index/references/event_skill_map.tsv`
 * each mapped event skill under `.agents/skills/execplan-event-*/`
 * `.agents/skills/execplan-sandbox-escalation/SKILL.md` and `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
-* `scripts/execplan_gate.sh`, `scripts/execplan_notify.sh`
+* `scripts/execplan_gate.sh`
 
 Templates (do not edit directly; edit copies in `.agents/skills/`): `assets/default-verification/execplan-event-*/`
 
@@ -151,17 +151,9 @@ Skipping this step is a policy violation that blocks lifecycle progress.
 
 Record every gate attempt in the plan's `## Verification Ledger` with:
 
-`event_id`, `attempt`, `status` (`pass`/`fail`/`escalated`), `commands`, `failure_summary`, `notify_reference`, `started_at`, `finished_at`
+`event_id`, `attempt`, `status` (`pass`/`fail`/`escalated`), `commands`, `failure_summary`, `started_at`, `finished_at`
 
 Do not store verification logs in separate temporary files.
-
-### Notification policy
-
-Notify at most once, after all actions complete and `execplan.post_completion` passes:
-
-* `scripts/execplan_notify.sh --plan <completed_plan_md> --event execplan.post_completion --status pass`
-
-Notification target is a GitHub PR comment.
 
 ## ExecPlan Lifecycle
 
@@ -192,8 +184,6 @@ Two paths depending on whether you are starting a new plan or resuming an existi
    * `scripts/execplan_gate.sh --plan <completed_plan_md> --event execplan.post_completion`
    * `execplan.post_completion` is validation-only: no `git add`, `git commit`, or `git push`
    * On failure: the gate script rolls the plan back to `eternal-cycler-out/plans/active/` before retrying. Use the current plan path (which may be in `active/` after rollback) when invoking the gate on retry. On escalation: same as step 6 — document failure, leave the plan in `eternal-cycler-out/plans/completed/` as failed, and stop.
-9. **Notify** (if configured):
-   * `scripts/execplan_notify.sh --plan <completed_plan_md> --event execplan.post_completion --status pass`
    * Lifecycle complete.
 
 ### Resume existing plan
@@ -202,7 +192,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 2. **Resume gate** — run out-of-sandbox:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
    Validates that the current branch matches the plan's recorded start branch, refreshes the PR tracking doc, and appends a resume record to the plan.
-3. Continue from step 3 of the new-plan path (execute actions, verify, finalize, post-completion gate, notify).
+3. Continue from step 3 of the new-plan path (execute actions, verify, finalize, post-completion gate).
 
 ## Skeleton of a Good ExecPlan
 
@@ -237,7 +227,6 @@ Two paths depending on whether you are starting a new plan or resuming an existi
     - `status` (`pass`, `fail`, `escalated`)
     - `commands`
     - `failure_summary`
-    - `notify_reference`
     - `started_at`
     - `finished_at`
 

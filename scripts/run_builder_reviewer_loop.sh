@@ -691,13 +691,12 @@ SUBMODULE_REL="$(realpath --relative-to="$WORKDIR" "$SUBMODULE_ROOT")"
 PATH_CONTEXT="Path context (all paths are from the repository root):
 - Policy docs:           ${SUBMODULE_REL}/PLANS.md, ${SUBMODULE_REL}/REVIEW.md
 - ExecPlan gate:         ${SUBMODULE_REL}/scripts/execplan_gate.sh
-- ExecPlan notify:       ${SUBMODULE_REL}/scripts/execplan_notify.sh
 - Verification skills:   .agents/skills/execplan-event-*/  (copied from ${SUBMODULE_REL}/assets/default-verification/ by setup.sh)
 - Event index map:       .agents/skills/execplan-event-index/references/event_skill_map.tsv
 - Sandbox policy:        .agents/skills/execplan-sandbox-escalation/SKILL.md
 - Plans dir:             eternal-cycler-out/plans/
 - PR tracking dir:       eternal-cycler-out/prs/
-Paths to policy docs, gate, and notify scripts are relative to ${SUBMODULE_REL}/. Paths to verification skills, plans, and PR tracking are relative to the repository root."
+Paths to policy docs and gate script are relative to ${SUBMODULE_REL}/. Paths to verification skills, plans, and PR tracking are relative to the repository root."
 
 if [[ -n "$(git ls-files -u)" ]]; then
   die "unmerged paths detected; resolve conflicts first"
