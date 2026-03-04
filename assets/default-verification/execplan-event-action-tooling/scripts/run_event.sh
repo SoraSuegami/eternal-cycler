@@ -2,8 +2,10 @@
 set -euo pipefail
 
 # ETERNAL_CYCLER_ROOT and REPO_ROOT are exported by execplan_gate.sh before calling this script.
-# Fall back to git-based resolution if invoked directly (e.g. during testing).
-ETERNAL_CYCLER_ROOT="${ETERNAL_CYCLER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
+# Fall back to relative resolution if invoked directly (e.g. during testing).
+# When deployed to .agents/skills/execplan-event-action-tooling/scripts/, two levels up lands in
+# .agents/skills/ and then we step into eternal-cycler/.
+ETERNAL_CYCLER_ROOT="${ETERNAL_CYCLER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../eternal-cycler" && pwd)}"
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
 
 PLAN=""
