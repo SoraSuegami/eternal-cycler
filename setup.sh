@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verify prerequisites after adding eternal-cycler via git subtree or as a standalone copy.
 # Run from anywhere inside the consuming repository:
-#   bash .agents/eternal-cycler/setup.sh
+#   bash .agents/skills/eternal-cycler/setup.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
