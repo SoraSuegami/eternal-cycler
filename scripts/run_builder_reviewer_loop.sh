@@ -17,7 +17,6 @@ Options:
   --max-reviewer-failures <n>        Max consecutive reviewer-phase failures (default: 3).
   --model-builder <model>            Optional model for builder codex runs.
   --model-reviewer <model>           Optional model for reviewer codex runs.
-  --min-agent-duration <secs>        Minimum seconds per builder/reviewer invocation (default: 3600).
   --help                             Show this help.
 USAGE
 }
@@ -241,8 +240,6 @@ run_codex_prompt_capture() {
   # Stream codex output directly to the terminal so the operator can follow
   # builder/reviewer progress in real time.  The structured JSON payload is
   # captured separately via --output-last-message into $last_message_file.
-  LAST_AGENT_START_TS="$(date +%s)"
-
   set +e
   printf '%s\n' "$prompt_text" | "${cmd[@]}"
   rc=$?
@@ -359,17 +356,6 @@ auto_stage_commit_and_push() {
 
   if ! head_is_pushed; then
     push_target_branch
-  fi
-}
-
-enforce_min_agent_duration() {
-  local role="$1"
-  local agent_elapsed agent_remaining
-  agent_elapsed=$(( $(date +%s) - LAST_AGENT_START_TS ))
-  agent_remaining=$(( MIN_AGENT_DURATION_SECS - agent_elapsed ))
-  if [[ "$agent_remaining" -gt 0 ]]; then
-    log "$role finished in ${agent_elapsed}s; waiting ${agent_remaining}s before next agent call"
-    sleep "$agent_remaining"
   fi
 }
 
@@ -605,8 +591,6 @@ MAX_BUILDER_CLEANUP_RETRIES=5
 MAX_REVIEWER_FAILURES=3
 MODEL_BUILDER=""
 MODEL_REVIEWER=""
-MIN_AGENT_DURATION_SECS=3600
-LAST_AGENT_START_TS=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -642,10 +626,6 @@ while [[ $# -gt 0 ]]; do
       MODEL_REVIEWER="${2:-}"
       shift 2
       ;;
-    --min-agent-duration)
-      MIN_AGENT_DURATION_SECS="${2:-}"
-      shift 2
-      ;;
     -h|--help)
       usage
       exit 0
@@ -671,7 +651,7 @@ if [[ -z "$TASK_TEXT" ]]; then
   exit 2
 fi
 
-for n in "$MAX_ITERATIONS" "$MAX_BUILDER_CLEANUP_RETRIES" "$MAX_REVIEWER_FAILURES" "$MIN_AGENT_DURATION_SECS"; do
+for n in "$MAX_ITERATIONS" "$MAX_BUILDER_CLEANUP_RETRIES" "$MAX_REVIEWER_FAILURES"; do
   is_positive_int "$n" || die "numeric options must be positive integers"
 done
 
@@ -802,8 +782,6 @@ fi
 
 log "target PR: $PR_URL"
 
-enforce_min_agent_duration "builder_initial"
-
 REVIEWER_FAILURES=0
 
 for ((ITERATION=1; ITERATION<=MAX_ITERATIONS; ITERATION++)); do
@@ -882,8 +860,6 @@ Review target:
     exit 0
   fi
 
-  enforce_min_agent_duration "reviewer"
-
   if [[ -n "$comment_url" ]]; then
     builder_followup_prompt="You are the BUILDER agent in an autonomous loop.
 
@@ -949,8 +925,6 @@ Requirements:
   else
     log "no new commit after builder follow-up; running next reviewer cycle"
   fi
-
-  enforce_min_agent_duration "builder_followup"
 
 done
 
