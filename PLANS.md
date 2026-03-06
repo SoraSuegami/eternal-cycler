@@ -66,7 +66,7 @@ Prefer additive changes followed by subtractions that keep tests passing. Parall
 ExecPlans must contain and maintain these sections (all are mandatory):
 
 * `Progress` — checkbox list, always reflecting the current state
-* `Verification Ledger` — all gate attempt records
+* `Hook Ledger` — all gate attempt records
 * `Surprises & Discoveries` — unexpected behaviors, bugs, or insights with short evidence
 * `Decision Log` — every decision with rationale, date, and author
 * `Outcomes & Retrospective` — summary at major milestones and at completion
@@ -87,37 +87,44 @@ One lifecycle, one ExecPlan per objective. For large work, decompose into action
 
 The `Progress` section must document execution topology for each delegated action:
 
-* `action_id`, `mode` (`serial` or `parallel`), `depends_on`, `file_locks`, `verify_events`, `worker_type`
+* `action_id`, `mode` (`serial` or `parallel`), `depends_on`, `file_locks`, `hook_events`, `worker_type`
 
 An action is parallelizable only when all `depends_on` actions are complete and `file_locks` for concurrent actions are disjoint. Delegate only `mode=parallel` actions to sub agents. The parent ExecPlan owner is responsible for conflict resolution and merging outcomes.
 
 ## Verification Policy
 
-Verification is enforced by the gate script and event-local skills.
+Verification is enforced by the gate script and event-local hooks.
 
-**Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Verification skill, plan, and PR tracking paths are relative to the consuming repository root.
+**Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Hook, plan, and PR tracking paths are relative to the consuming repository root.
 
 Operational source of truth:
 
-* `.agents/skills/execplan-event-index/references/event_skill_map.tsv`
-* each mapped event skill under `.agents/skills/execplan-event-*/`
+* each installed hook under `.agents/skills/execplan-hook-*/`
 * `.agents/skills/execplan-sandbox-escalation/SKILL.md` and `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
 * `scripts/execplan_gate.sh`
 
-Templates (do not edit directly; edit copies in `.agents/skills/`): `assets/default-verification/execplan-event-*/`
+Templates (do not edit directly; edit copies in `.agents/skills/`): `assets/default-hooks/execplan-hook-*/`
 
 ### Event model
 
-Event membership is data-driven by `.agents/skills/execplan-event-index/references/event_skill_map.tsv`.
+Each event resolves to a hook directory by naming convention. Supported event namespaces are `execplan.*` and `hook.*`. Strip that namespace, replace `_` and `.` with `-`, then prefix `execplan-hook-`.
 
-Mandatory lifecycle events (must always be in the map):
+Examples:
+
+* `execplan.post_creation` → `.agents/skills/execplan-hook-post-creation/`
+* `hook.tooling` → `.agents/skills/execplan-hook-tooling/`
+
+When choosing `hook_events` for a `Progress` action, search the installed skill index for `execplan-hook-*` hooks and select the matching event ID.
+
+Mandatory lifecycle events (must always have matching hooks):
 
 * `execplan.pre_creation`
 * `execplan.post_creation`
 * `execplan.resume`
 * `execplan.post_completion`
 
-Action events are flexible and may be added or removed without changing this policy text, as long as they are registered in the event map. To add a new event, add a skill directory under `.agents/skills/` and register it in the event map.
+Non-lifecycle events are flexible and may be added or removed without changing this policy text, as long as their derived hook directories exist under `.agents/skills/`.
+Legacy `action.*` event IDs are rejected; `action` is reserved for `Progress` checklist items only.
 
 ### Enforcement model
 
@@ -125,14 +132,14 @@ Gate command: `scripts/execplan_gate.sh --event <event_id> [--plan <plan_md>] [-
 
 The gate blocks lifecycle progress when any previously attempted event remains in `fail` or `escalated` state, and additionally:
 
-* rejects lifecycle events (`execplan.pre_creation`, `execplan.post_creation`, `execplan.resume`, `execplan.post_completion`) in `Progress` action `verify_events`
-* blocks `execplan.post_completion` until `execplan.post_creation` or `execplan.resume` has a `pass` entry, and every action event in `verify_events` has at least one `pass` entry in the Verification Ledger
+* rejects lifecycle events (`execplan.pre_creation`, `execplan.post_creation`, `execplan.resume`, `execplan.post_completion`) in `Progress` action `hook_events`
+* blocks `execplan.post_completion` until `execplan.post_creation` or `execplan.resume` has a `pass` entry, and every event referenced by `hook_events` has at least one `pass` entry in the Hook Ledger
 
 ### Retry and escalation
 
 Max attempts per event: **3**. If the bound is exceeded, the gate marks the event `escalated` and stops progress. After escalation:
 
-* document failure explicitly in `Progress`, `Verification Ledger`, and `Outcomes & Retrospective`
+* document failure explicitly in `Progress`, `Hook Ledger`, and `Outcomes & Retrospective`
 * force-close the current plan as failed (move to `eternal-cycler-out/plans/completed/`)
 * resume only via a new ExecPlan in `eternal-cycler-out/plans/active/` seeded from human-operator feedback referencing the failed plan
 
@@ -149,7 +156,7 @@ Skipping this step is a policy violation that blocks lifecycle progress.
 
 ### Evidence policy
 
-Record every gate attempt in the plan's `## Verification Ledger` with:
+Record every gate attempt in the plan's `## Hook Ledger` with:
 
 `event_id`, `attempt`, `status` (`pass`/`fail`/`escalated`), `commands`, `failure_summary`, `started_at`, `finished_at`
 
@@ -164,19 +171,19 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 1. **Pre-creation gate** — run out-of-sandbox before creating the plan document:
    `scripts/execplan_gate.sh --event execplan.pre_creation`
    Validates environment (branch, working tree). No ledger entry is written because the plan file does not exist yet.
-2. **Create plan and post-creation gate** — create the plan document in `eternal-cycler-out/plans/active/`, write the full plan, and define all `Progress` action metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `verify_events`, `worker_type`; `verify_events` must contain only `action.*` IDs; lifecycle events must never appear in `verify_events`). Then immediately run:
+2. **Create plan and post-creation gate** — create the plan document in `eternal-cycler-out/plans/active/`, write the full plan, and define all `Progress` action metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `hook_events`, `worker_type`; `hook_events` must contain only `hook.*` IDs; lifecycle events must never appear in `hook_events`). Then immediately run:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.post_creation`
    This records the start snapshot, creates the PR tracking doc, and writes the plan linkage metadata that `execplan.post_completion` requires.
 3. **Execute actions** in dependency order. Mark each `[x]` immediately when complete. Out-of-sandbox commands must follow the sandbox escalation policy.
-4. **Verify after each action** — run `scripts/execplan_gate.sh` for each event in `verify_events`. The gate blocks progress on failure.
-5. **Record all gate attempts** in `## Verification Ledger`.
+4. **Run hook after each action** — run `scripts/execplan_gate.sh` for each event in `hook_events`. The gate blocks progress on failure.
+5. **Record all gate attempts** in `## Hook Ledger`.
 6. **On failure** — retry up to 3 attempts. On escalation:
-   * document failure in `Progress`, `Verification Ledger`, and `Outcomes & Retrospective`
+   * document failure in `Progress`, `Hook Ledger`, and `Outcomes & Retrospective`
    * move the plan to `eternal-cycler-out/plans/completed/` as failed
    * stop; resume only via a new ExecPlan after operator feedback
 7. **Finalize plan** after all actions pass:
    * update all living-document sections (`Progress`, `Surprises & Discoveries`, `Decision Log`, `Outcomes & Retrospective`)
-   * note which verification scripts were referenced, created, modified, or left unchanged, and why
+   * note which hook scripts were referenced, created, modified, or left unchanged, and why
    * move the plan to `eternal-cycler-out/plans/completed/`
    * ensure all implementation commits are pushed
    * add tech-debt follow-up plans if needed
@@ -188,7 +195,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 
 ### Resume existing plan
 
-1. **Select plan** from `eternal-cycler-out/plans/active/`. If there is operator feedback, update `Progress` actions and add `verify_events` entries for any newly registered events.
+1. **Select plan** from `eternal-cycler-out/plans/active/`. If there is operator feedback, update `Progress` actions and add `hook_events` entries for any newly available hooks.
 2. **Resume gate** — run out-of-sandbox:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
    Validates that the current branch matches the plan's recorded start branch, refreshes the PR tracking doc, and appends a resume record to the plan.
@@ -212,15 +219,15 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 
     - [x] (2025-10-01 13:00Z) Example completed step.
     - [ ] Example incomplete step.
-    - [ ] action_id=a3; mode=parallel; depends_on=a1,a2; file_locks=src/lookup/mod.rs; verify_events=action.tooling; worker_type=worker; implement lookup cache rewrite.
+    - [ ] action_id=a3; mode=parallel; depends_on=a1,a2; file_locks=src/lookup/mod.rs; hook_events=hook.tooling; worker_type=worker; implement lookup cache rewrite.
 
     Use timestamps to measure rates of progress. Mark each action `[x]` immediately when it finishes.
 
-    Each `Progress` action must define: `action_id`, `mode` (`serial` or `parallel`), `depends_on`, `file_locks`, `verify_events`, `worker_type`. `verify_events` must contain only `action.*` events; lifecycle events are executed only by lifecycle steps.
+    Each `Progress` action must define: `action_id`, `mode` (`serial` or `parallel`), `depends_on`, `file_locks`, `hook_events`, `worker_type`. `hook_events` must contain only `hook.*` events; lifecycle events are executed only by lifecycle steps.
 
-    ## Verification Ledger
+    ## Hook Ledger
 
-    Record every verification event attempt with one entry per attempt:
+    Record every gate attempt with one entry per attempt:
 
     - `event_id`
     - `attempt`

@@ -93,40 +93,56 @@ REPO_ROOT="$(git -C "$SUBMODULE_ROOT" rev-parse --show-toplevel)"
 export ETERNAL_CYCLER_ROOT="$SUBMODULE_ROOT"
 export REPO_ROOT
 
-# Event map: read from the consuming repo's .agents/skills/ directory so that new events
-# added by the consuming repo are automatically picked up.
-# Default verification skills are copied to .agents/skills/ by setup.sh.
-# To add new action events, add entries to .agents/skills/execplan-event-index/references/event_skill_map.tsv
-# and create matching scripts under .agents/skills/<skill-dir>/.
-EVENT_MAP="$REPO_ROOT/.agents/skills/execplan-event-index/references/event_skill_map.tsv"
-
-if [[ ! -f "$EVENT_MAP" ]]; then
-  echo "Event map not found: $EVENT_MAP" >&2
-  exit 1
-fi
-
-# lookup_event_row <event_id>
-# Prints "skill_dir<TAB>script_rel" for the event. Prints nothing and returns 1 if not found.
-lookup_event_row() {
+# Hook directories are read from the consuming repo's .agents/skills/ directory.
+# Default hooks are copied there by setup.sh. Supported event namespaces are:
+#   execplan.<lifecycle-name> -> .agents/skills/execplan-hook-<lifecycle-name>/
+#   hook.<hook-name>          -> .agents/skills/execplan-hook-<hook-name>/
+event_to_hook_suffix() {
   local event_id="$1"
-  local row
-  row="$(awk -F '\t' -v e="$event_id" '$0 !~ /^#/ && $1 == e { print $2 "\t" $3; exit }' "$EVENT_MAP")"
-  if [[ -z "$row" ]]; then
-    return 1
-  fi
-  printf '%s\n' "$row"
+  local suffix
+
+  case "$event_id" in
+    execplan.*)
+      suffix="${event_id#execplan.}"
+      ;;
+    hook.*)
+      suffix="${event_id#hook.}"
+      ;;
+    action.*)
+      echo "Legacy action.* event IDs are not supported: $event_id (use hook.${event_id#action.})" >&2
+      return 1
+      ;;
+    *)
+      echo "Unsupported event namespace: $event_id (expected execplan.* or hook.*)" >&2
+      return 1
+      ;;
+  esac
+
+  suffix="${suffix//_/-}"
+  suffix="${suffix//./-}"
+  [[ -n "$suffix" ]] || return 1
+  printf '%s\n' "$suffix"
+}
+
+event_to_hook_dir() {
+  local event_id="$1"
+  local suffix
+
+  suffix="$(event_to_hook_suffix "$event_id")" || return 1
+  printf 'execplan-hook-%s\n' "$suffix"
 }
 
 is_registered_event() {
   local event_id="$1"
-  lookup_event_row "$event_id" >/dev/null 2>&1
+  resolve_event_script "$event_id" >/dev/null 2>&1
 }
 
 require_mandatory_lifecycle_events() {
-  local required
+  local required hook_dir
   for required in "$PRE_CREATION_EVENT_ID" "$POST_CREATION_EVENT_ID" "$RESUME_EVENT_ID" "$POST_EVENT_ID"; do
     if ! is_registered_event "$required"; then
-      echo "Mandatory lifecycle event missing from event map: $required" >&2
+      hook_dir="$(event_to_hook_dir "$required" 2>/dev/null || echo "(invalid-event-id)")"
+      echo "Mandatory lifecycle hook missing or not executable for ${required}: $REPO_ROOT/.agents/skills/${hook_dir}/scripts/run_event.sh" >&2
       exit 1
     fi
   done
@@ -134,20 +150,16 @@ require_mandatory_lifecycle_events() {
 
 resolve_event_script() {
   local event_id="$1"
-  local row skill_dir script_rel script_abs
+  local hook_dir script_abs
 
-  row="$(awk -F '\t' -v e="$event_id" '$0 !~ /^#/ && $1 == e { print $2 "\t" $3; exit }' "$EVENT_MAP")"
-  if [[ -z "$row" ]]; then
-    echo ""
+  hook_dir="$(event_to_hook_dir "$event_id")" || {
+    echo "Unsupported event id format: $event_id" >&2
     return 1
-  fi
-
-  skill_dir="${row%%$'\t'*}"
-  script_rel="${row#*$'\t'}"
-  script_abs="$REPO_ROOT/.agents/skills/$skill_dir/$script_rel"
+  }
+  script_abs="$REPO_ROOT/.agents/skills/$hook_dir/scripts/run_event.sh"
 
   if [[ ! -x "$script_abs" ]]; then
-    echo "Event script is missing or not executable: $script_abs" >&2
+    echo "Hook script is missing or not executable: $script_abs" >&2
     return 1
   fi
 
@@ -158,26 +170,59 @@ sanitize() {
   echo "$1" | tr '\n' ' ' | sed -E 's/[;]+/,/g; s/[[:space:]]+/ /g; s/^ //; s/ $//'
 }
 
+LEDGER_HEADING="## Hook Ledger"
+LEDGER_START_MARKER="<!-- hook-ledger:start -->"
+LEDGER_END_MARKER="<!-- hook-ledger:end -->"
+LEGACY_LEDGER_START_MARKER="<!-- verification-ledger:start -->"
+LEGACY_LEDGER_END_MARKER="<!-- verification-ledger:end -->"
+
+current_ledger_start_marker() {
+  if rg -q "$LEDGER_START_MARKER" "$PLAN"; then
+    printf '%s\n' "$LEDGER_START_MARKER"
+    return 0
+  fi
+  if rg -q "$LEGACY_LEDGER_START_MARKER" "$PLAN"; then
+    printf '%s\n' "$LEGACY_LEDGER_START_MARKER"
+    return 0
+  fi
+  return 1
+}
+
+current_ledger_end_marker() {
+  if rg -q "$LEDGER_END_MARKER" "$PLAN"; then
+    printf '%s\n' "$LEDGER_END_MARKER"
+    return 0
+  fi
+  if rg -q "$LEGACY_LEDGER_END_MARKER" "$PLAN"; then
+    printf '%s\n' "$LEGACY_LEDGER_END_MARKER"
+    return 0
+  fi
+  return 1
+}
+
 ensure_ledger_block() {
   if [[ "$HAS_PLAN_FILE" -ne 1 ]]; then
     return 0
   fi
-  if ! rg -q "<!-- verification-ledger:start -->" "$PLAN"; then
+  if ! current_ledger_start_marker >/dev/null 2>&1; then
     {
       echo
-      echo "## Verification Ledger"
+      echo "$LEDGER_HEADING"
       echo
-      echo "<!-- verification-ledger:start -->"
-      echo "<!-- verification-ledger:end -->"
+      echo "$LEDGER_START_MARKER"
+      echo "$LEDGER_END_MARKER"
     } >> "$PLAN"
   fi
 }
 
 ledger_lines() {
+  local start_marker end_marker
   if [[ "$HAS_PLAN_FILE" -ne 1 ]]; then
     return 0
   fi
-  sed -n '/<!-- verification-ledger:start -->/,/<!-- verification-ledger:end -->/p' "$PLAN"
+  start_marker="$(current_ledger_start_marker)" || return 0
+  end_marker="$(current_ledger_end_marker)" || return 0
+  sed -n "/${start_marker//\//\\/}/,/${end_marker//\//\\/}/p" "$PLAN"
 }
 
 count_attempts() {
@@ -282,19 +327,23 @@ find_unresolved_nonpass_event() {
   '
 }
 
-missing_required_verify_event_passes() {
+missing_required_hook_event_passes() {
   if [[ "$HAS_PLAN_FILE" -ne 1 ]]; then
     return 1
   fi
   local required_events event
   required_events="$(
     awk '
-      /verify_events=/ {
+      /hook_events=|verify_events=/ {
         n=split($0, parts, ";")
         for (i=1; i<=n; i++) {
-          if (parts[i] ~ /verify_events=/) {
+          if (parts[i] ~ /hook_events=/ || parts[i] ~ /verify_events=/) {
             field=parts[i]
-            gsub(/^.*verify_events=/, "", field)
+            if (field ~ /hook_events=/) {
+              gsub(/^.*hook_events=/, "", field)
+            } else {
+              gsub(/^.*verify_events=/, "", field)
+            }
             gsub(/^ +| +$/, "", field)
             split(field, events, ",")
             for (j in events) {
@@ -452,21 +501,28 @@ append_ledger_entry() {
   fi
   local entry="$1"
   local tmp
+  local end_marker
   tmp="$(mktemp)"
+  end_marker="$(current_ledger_end_marker || true)"
 
-  awk -v entry="$entry" '
-    /<!-- verification-ledger:end -->/ && !inserted {
+  if [[ -z "$end_marker" ]]; then
+    end_marker="$LEDGER_END_MARKER"
+  fi
+
+  awk -v entry="$entry" -v end_marker="$end_marker" -v ledger_heading="$LEDGER_HEADING" \
+      -v ledger_start="$LEDGER_START_MARKER" -v ledger_end="$LEDGER_END_MARKER" '
+    index($0, end_marker) && !inserted {
       print entry
       inserted=1
     }
     { print }
     END {
       if (!inserted) {
-        print "## Verification Ledger"
+        print ledger_heading
         print ""
-        print "<!-- verification-ledger:start -->"
+        print ledger_start
         print entry
-        print "<!-- verification-ledger:end -->"
+        print ledger_end
       }
     }
   ' "$PLAN" > "$tmp"
@@ -476,7 +532,12 @@ append_ledger_entry() {
 
 require_mandatory_lifecycle_events
 if ! is_registered_event "$EVENT"; then
-  echo "Unsupported or unmapped event: $EVENT" >&2
+  if [[ "$EVENT" == action.* ]]; then
+    echo "Legacy action.* event IDs are not supported: $EVENT (use hook.${EVENT#action.})" >&2
+    exit 2
+  fi
+  expected_hook_dir="$(event_to_hook_dir "$EVENT" 2>/dev/null || echo "(invalid-event-id)")"
+  echo "Unsupported event or missing hook: $EVENT (expected .agents/skills/${expected_hook_dir}/scripts/run_event.sh)" >&2
   exit 2
 fi
 
@@ -522,15 +583,15 @@ if [[ -z "$FINAL_STATUS" && "$EVENT" == "$POST_EVENT_ID" ]]; then
   if ! has_non_lifecycle_pass; then
     FINAL_STATUS="fail"
     COMMANDS="gate prerequisite: require non-lifecycle event pass"
-    FAILURE_SUMMARY="missing pass entry for non-lifecycle verification events"
+    FAILURE_SUMMARY="missing pass entry for non-lifecycle hook events"
   fi
 fi
 
 if [[ -z "$FINAL_STATUS" && "$EVENT" == "$POST_EVENT_ID" ]]; then
-  if missing_events="$(missing_required_verify_event_passes)"; then
+  if missing_events="$(missing_required_hook_event_passes)"; then
     FINAL_STATUS="fail"
-    COMMANDS="gate prerequisite: required verify_events pass coverage scan"
-    FAILURE_SUMMARY="missing pass entries for required verify_events: ${missing_events}"
+    COMMANDS="gate prerequisite: required hook_events pass coverage scan"
+    FAILURE_SUMMARY="missing pass entries for required hook_events: ${missing_events}"
   fi
 fi
 
@@ -572,7 +633,7 @@ if [[ -z "$FINAL_STATUS" ]]; then
   fi
 
   if [[ -z "$COMMANDS" ]]; then
-    COMMANDS="skill event runner ${EVENT}"
+    COMMANDS="hook runner ${EVENT}"
   fi
 
   if [[ $EVENT_RC -eq 0 && "$RUN_STATUS" == "pass" ]]; then

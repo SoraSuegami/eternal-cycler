@@ -28,7 +28,7 @@ All paths are relative to this SKILL.md file's location (the eternal-cycler inst
 ### Resume plan flow
 
 5. Read the selected plan document.
-6. Ask the user if there are any modifications to the plan (updated Progress actions, new verify_events, operator feedback). If modifications are provided, apply them to the plan document before continuing.
+6. Ask the user if there are any modifications to the plan (updated Progress actions, new hook_events, operator feedback). If modifications are provided, apply them to the plan document before continuing.
 7. Determine the branch:
    - Read `execplan_start_branch:` from the plan.
    - Switch to that branch:

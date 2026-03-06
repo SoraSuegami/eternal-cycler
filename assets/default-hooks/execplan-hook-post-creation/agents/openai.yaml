@@ -1,0 +1,7 @@
+interface:
+  display_name: "Hook Post Creation"
+  short_description: "Run the post-creation hook"
+  default_prompt: "Execute the post-creation hook for an ExecPlan."
+
+policy:
+  allow_implicit_invocation: true

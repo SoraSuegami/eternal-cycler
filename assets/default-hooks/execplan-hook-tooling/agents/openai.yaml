@@ -1,0 +1,7 @@
+interface:
+  display_name: "Hook Tooling"
+  short_description: "Run the tooling hook"
+  default_prompt: "Execute the tooling hook for an ExecPlan Progress action."
+
+policy:
+  allow_implicit_invocation: true

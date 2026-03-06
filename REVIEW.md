@@ -29,16 +29,16 @@ For the target PR, verify all of the following before returning a decision:
 4. **Code hygiene.** Check for duplicated logic, unnecessary processing, dead private code paths, and obsolete fallback logic retained without current necessity.
 5. **Benchmarks.** If PR changes can materially affect benchmark outcomes, run relevant benchmarks and record the result delta against the base branch.
 6. **Suspicious changes.** Check for any other unnatural, inconsistent, or suspicious changes.
-7. **Verification Ledger.** Confirm the target ExecPlan includes a `Verification Ledger` with complete gate-attempt history for required lifecycle and action events.
+7. **Hook Ledger.** Confirm the target ExecPlan includes a `Hook Ledger` with complete gate-attempt history for required lifecycle events and every event referenced by `hook_events`.
 8. **Plan state.** Inspect the latest plan document changed by the PR. If that plan indicates unresolved three-attempt failure/escalation (for example, a force-closed failed plan without remediation), the reviewer comment must explicitly demand remediation.
 
 If all checks pass, the returned payload must explicitly state that outcome and include benchmark results when benchmarks were run.
 
 ## Verification sources
 
-**Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Verification skill and PR tracking paths are relative to the consuming repository root.
+**Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Hook and PR tracking paths are relative to the consuming repository root.
 
-Use repository-local event verification skills under `.agents/skills/execplan-event-*/`, with event resolution from `.agents/skills/execplan-event-index/references/event_skill_map.tsv`, and the gate script under `scripts/` to decide concrete commands and checks.
+Use repository-local hooks under `.agents/skills/execplan-hook-*/`. Resolve the hook directory from the event ID by taking the portion after the first `.`, replacing `_` and `.` with `-`, and prefixing `execplan-hook-`. Use the gate script under `scripts/` to decide concrete commands and checks.
 
 ## Review cycle
 

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Hook Resume"
+  short_description: "Run the resume hook"
+  default_prompt: "Execute the resume hook for an ExecPlan."
+
+policy:
+  allow_implicit_invocation: true

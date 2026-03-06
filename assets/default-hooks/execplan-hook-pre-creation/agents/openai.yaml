@@ -1,0 +1,7 @@
+interface:
+  display_name: "Hook Pre Creation"
+  short_description: "Run the pre-creation hook"
+  default_prompt: "Execute the pre-creation hook for an ExecPlan."
+
+policy:
+  allow_implicit_invocation: true

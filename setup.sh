@@ -49,14 +49,23 @@ for bin in git gh codex jq rg; do
 done
 echo
 
-# Copy default verification skills to the consuming repo's .agents/skills/ directory.
-# The gate script reads event skill scripts from .agents/skills/, not from assets/default-verification/.
-# Existing skill directories are overwritten so that updates from eternal-cycler are always applied.
+# Copy default ExecPlan hooks to the consuming repo's .agents/skills/ directory.
+# The gate script reads hook scripts from .agents/skills/, not from assets/default-hooks/.
+# Existing hook directories are overwritten so that updates from eternal-cycler are always applied.
 SKILLS_DIR="$REPO_ROOT/.agents/skills"
-DEFAULT_VERIFICATION_DIR="$SCRIPT_DIR/assets/default-verification"
+DEFAULT_HOOKS_DIR="$SCRIPT_DIR/assets/default-hooks"
 mkdir -p "$SKILLS_DIR"
-log "Copying default verification skills to ${REPO_ROOT}/.agents/skills/"
-for skill_dir in "$DEFAULT_VERIFICATION_DIR"/*/; do
+
+shopt -s nullglob
+for legacy_dir in "$SKILLS_DIR"/execplan-event-*; do
+  [[ -d "$legacy_dir" ]] || continue
+  rm -rf "$legacy_dir"
+  log "OK   removed obsolete $(basename "$legacy_dir")"
+done
+shopt -u nullglob
+
+log "Copying default ExecPlan hooks to ${REPO_ROOT}/.agents/skills/"
+for skill_dir in "$DEFAULT_HOOKS_DIR"/*/; do
   skill_name="$(basename "$skill_dir")"
   rm -rf "${SKILLS_DIR:?}/$skill_name"
   cp -r "$skill_dir" "$SKILLS_DIR/$skill_name"

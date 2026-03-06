@@ -1,0 +1,7 @@
+interface:
+  display_name: "Hook Post Completion"
+  short_description: "Run the post-completion hook"
+  default_prompt: "Execute the post-completion hook for an ExecPlan."
+
+policy:
+  allow_implicit_invocation: true

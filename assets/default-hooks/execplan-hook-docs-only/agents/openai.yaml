@@ -1,0 +1,7 @@
+interface:
+  display_name: "Hook Docs Only"
+  short_description: "Run the docs-only hook"
+  default_prompt: "Execute the docs-only hook for an ExecPlan Progress action."
+
+policy:
+  allow_implicit_invocation: true

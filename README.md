@@ -4,7 +4,7 @@ An autonomous PR builder/reviewer loop for [Codex](https://github.com/openai/cod
 
 - An autonomous agent loop that writes code, opens PRs, reviews them, and iterates until the reviewer approves
 - An ExecPlan lifecycle system that enforces structured planning, verification gates, and escalation bounds
-- A verification skill framework for repo-specific pre/post-action checks
+- An ExecPlan hook framework for repo-specific pre/post-action checks
 
 ## Directory layout after installation
 
@@ -18,14 +18,13 @@ your-repo/
 │       │   ├── REVIEW.md
 │       │   ├── setup.sh
 │       │   ├── scripts/
-│       │   └── assets/default-verification/   # default event skill templates
-│       ├── execplan-event-index/    # copied from default-verification by setup.sh
-│       ├── execplan-event-pre-creation/
-│       ├── execplan-event-post-creation/
-│       ├── execplan-event-resume/
-│       ├── execplan-event-post-completion/
-│       ├── execplan-event-action-docs-only/
-│       ├── execplan-event-action-tooling/
+│       │   └── assets/default-hooks/          # default hook templates
+│       ├── execplan-hook-pre-creation/
+│       ├── execplan-hook-post-creation/
+│       ├── execplan-hook-resume/
+│       ├── execplan-hook-post-completion/
+│       ├── execplan-hook-docs-only/
+│       ├── execplan-hook-tooling/
 │       └── execplan-sandbox-escalation/
 └── eternal-cycler-out/              # created by setup.sh — all dynamic agent output
     ├── plans/
@@ -61,7 +60,7 @@ git subtree add \
   --squash
 ```
 
-Then run setup to copy verification skills and create the output directories:
+Then run setup to copy the default hooks and create the output directories:
 
 ```bash
 bash .agents/skills/eternal-cycler/setup.sh
@@ -79,14 +78,13 @@ Setup output:
 [setup] OK  jq found
 [setup] OK  rg found
 
-[setup] Copying default verification skills to /path/to/your-repo/.agents/skills/
-[setup] OK   copied execplan-event-index -> .agents/skills/execplan-event-index
-[setup] OK   copied execplan-event-pre-creation -> .agents/skills/execplan-event-pre-creation
-[setup] OK   copied execplan-event-post-creation -> .agents/skills/execplan-event-post-creation
-[setup] OK   copied execplan-event-resume -> .agents/skills/execplan-event-resume
-[setup] OK   copied execplan-event-post-completion -> .agents/skills/execplan-event-post-completion
-[setup] OK   copied execplan-event-action-docs-only -> .agents/skills/execplan-event-action-docs-only
-[setup] OK   copied execplan-event-action-tooling -> .agents/skills/execplan-event-action-tooling
+[setup] Copying default ExecPlan hooks to /path/to/your-repo/.agents/skills/
+[setup] OK   copied execplan-hook-pre-creation -> .agents/skills/execplan-hook-pre-creation
+[setup] OK   copied execplan-hook-post-creation -> .agents/skills/execplan-hook-post-creation
+[setup] OK   copied execplan-hook-resume -> .agents/skills/execplan-hook-resume
+[setup] OK   copied execplan-hook-post-completion -> .agents/skills/execplan-hook-post-completion
+[setup] OK   copied execplan-hook-docs-only -> .agents/skills/execplan-hook-docs-only
+[setup] OK   copied execplan-hook-tooling -> .agents/skills/execplan-hook-tooling
 [setup] OK   copied execplan-sandbox-escalation -> .agents/skills/execplan-sandbox-escalation
 
 [setup] Creating eternal-cycler-out/ output directories under /path/to/your-repo/
@@ -143,29 +141,26 @@ git subtree pull \
   --squash
 ```
 
-Re-run setup after updating to pick up any new default verification skills:
+Re-run setup after updating to pick up any new default hooks:
 
 ```bash
 bash .agents/skills/eternal-cycler/setup.sh
 ```
 
-Existing skill directories in `.agents/skills/` are overwritten so that updates from eternal-cycler are always applied.
+Existing hook directories in `.agents/skills/` are overwritten so that updates from eternal-cycler are always applied.
 
-## Adding custom verification events
+## Adding custom hooks
 
-The gate script resolves event scripts from `.agents/skills/` in your repository. To add a new action event:
+The gate script resolves hook scripts from `.agents/skills/` in your repository. To add a new hook for a `hook_events` entry:
 
-1. Create a skill directory under `.agents/skills/your-event-name/` with a `scripts/run_event.sh` that outputs `STATUS=pass` or `STATUS=fail`.
-2. Register it in `.agents/skills/execplan-event-index/references/event_skill_map.tsv`:
+1. Pick an event ID, for example `hook.your_event`.
+   Legacy `action.*` event IDs are rejected.
+2. Derive the hook directory name from the portion after the first `.` by replacing `_` and `.` with `-`.
+   `hook.your_event` becomes `.agents/skills/execplan-hook-your-event/`.
+3. Create that directory with a `scripts/run_event.sh` that outputs `STATUS=pass` or `STATUS=fail`.
+4. When authoring an ExecPlan `Progress` action, search the installed skill index for `execplan-hook-*` hooks and write the corresponding event ID into `hook_events`.
 
-```tsv
-# event_id	skill_dir	script_relpath
-action.your_event	your-event-name	scripts/run_event.sh
-```
-
-3. Reference `action.your_event` in your ExecPlan `Progress` actions via `verify_events=action.your_event`.
-
-See `assets/default-verification/execplan-event-action-tooling/` for an example event skill.
+See `assets/default-hooks/execplan-hook-tooling/` for an example hook.
 
 ## Key documents
 
