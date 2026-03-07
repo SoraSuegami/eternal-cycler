@@ -30,6 +30,7 @@
 #   - gh pr edit
 #   - gh pr close
 #   - codex login status
+#   - codex exec resume --dangerously-bypass-approvals-and-sandbox <thread_id>
 #   - git switch
 #   - git switch -c
 #   - git pull --ff-only origin <branch>
@@ -190,5 +191,14 @@ prefix_rule(
     ],
     not_match = [
         "codex login status",
+    ],
+)
+
+prefix_rule(
+    pattern = ["codex", "exec", "resume", "--dangerously-bypass-approvals-and-sandbox"],
+    decision = "forbidden",
+    justification = "Do not invoke nested sandbox-bypassing Codex resume directly. Use the audited loop script instead.",
+    match = [
+        "codex exec resume --dangerously-bypass-approvals-and-sandbox 019cc677-8234-7690-ae3e-9a37f7686755 -",
     ],
 )

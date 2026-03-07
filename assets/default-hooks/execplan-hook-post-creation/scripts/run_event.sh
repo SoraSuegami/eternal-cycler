@@ -83,6 +83,7 @@ creation_commit="$(git rev-parse HEAD)"
 existing_target_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_target_pr_url")")"
 existing_supersedes_plan="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_supersedes_plan")")"
 existing_supersedes_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_supersedes_pr_url")")"
+existing_builder_session_id="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_builder_session_id")")"
 branch_slug="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_branch_slug")")"
 take="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_take")")"
 existing_target_branch="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_target_branch")")"
@@ -135,6 +136,10 @@ fi
 if [[ -n "$existing_supersedes_pr_url" ]]; then
   metadata_block+=$'\n'
   metadata_block+="- execplan_supersedes_pr_url: ${existing_supersedes_pr_url}"
+fi
+if [[ -n "$existing_builder_session_id" ]]; then
+  metadata_block+=$'\n'
+  metadata_block+="- execplan_builder_session_id: ${existing_builder_session_id}"
 fi
 metadata_block+=$'\n'
 metadata_block+="${EXECPLAN_METADATA_END}"

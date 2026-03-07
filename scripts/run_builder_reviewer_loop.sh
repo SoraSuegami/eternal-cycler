@@ -61,6 +61,20 @@ normalize_pr_url() {
   printf '%s\n' "$pr_url" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s:/+$::'
 }
 
+read_scalar_from_text() {
+  local text="$1"
+  local key="$2"
+
+  awk -v key="$key" '
+    $0 ~ ("^[[:space:]-]*" key ":[[:space:]]*") {
+      line = $0
+      sub("^[[:space:]-]*" key ":[[:space:]]*", "", line)
+      print line
+      exit
+    }
+  ' <<< "$text" | sed -E 's/[[:space:]]+$//'
+}
+
 parse_reviewer_payload_json() {
   local raw="$1"
   jq -e -c '
@@ -76,27 +90,6 @@ parse_reviewer_payload_json() {
     | if (.comment_body | length) == 0 then error("comment_body must be non-empty") else . end
     | if (.approve_merge | type) != "boolean" then error("approve_merge must be boolean") else . end
     | {pr_url, comment_body, approve_merge}
-  ' <<< "$raw" 2>/dev/null
-}
-
-parse_builder_payload_json() {
-  local raw="$1"
-  jq -e -c '
-    if type != "object" then
-      error("builder output must be a JSON object")
-    else
-      .
-    end
-    | if (.result | type) != "string" then error("result must be string") else . end
-    | if (.comment | type) != "string" then error("comment must be string") else . end
-    | .comment |= (sub("^[[:space:]]+"; "") | sub("[[:space:]]+$"; ""))
-    | if (.comment | length) == 0 then error("comment must be non-empty") else . end
-    | if (.result != "success" and .result != "failed_after_3_retries") then
-        error("result must be success or failed_after_3_retries")
-      else
-        .
-      end
-    | {result, comment}
   ' <<< "$raw" 2>/dev/null
 }
 
@@ -135,23 +128,83 @@ branch_head_is_pushed() {
   [[ -n "$remote_head" && "$remote_head" == "$local_head" ]]
 }
 
-run_codex_prompt() {
+locate_codex_session_file_by_tag() {
+  local tag="$1"
+  local session_root="${HOME}/.codex/sessions"
+  local session_file
+
+  [[ -d "$session_root" ]] || return 1
+
+  session_file="$(rg -l -F "$tag" "$session_root" 2>/dev/null | sort | tail -n1 || true)"
+  [[ -n "$session_file" ]] || return 1
+  printf '%s\n' "$session_file"
+}
+
+resolve_codex_session_id_from_file() {
+  local session_file="$1"
+
+  jq -r 'select(.type == "session_meta") | .payload.id // empty' "$session_file" 2>/dev/null | head -n1
+}
+
+discover_builder_session_id() {
+  local session_tag="$1"
+  local session_file session_id
+
+  session_file="$(locate_codex_session_file_by_tag "$session_tag" || true)"
+  [[ -n "$session_file" ]] || return 1
+
+  session_id="$(resolve_codex_session_id_from_file "$session_file")"
+  [[ -n "$session_id" ]] || return 1
+  printf '%s\n' "$session_id"
+}
+
+run_builder_prompt() {
   local role="$1"
   local model="$2"
   local prompt_text="$3"
+  local cmd=()
+  local effective_prompt="$prompt_text"
+  local discovered_session_id
 
-  local cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --cd "$WORKDIR")
+  if [[ -n "$BUILDER_SESSION_ID" ]]; then
+    cmd=(codex exec resume --dangerously-bypass-approvals-and-sandbox "$BUILDER_SESSION_ID")
+    if [[ -n "$model" ]]; then
+      cmd+=(--model "$model")
+    fi
+    cmd+=(-)
+
+    if printf '%s\n' "$effective_prompt" | "${cmd[@]}"; then
+      return 0
+    fi
+
+    log "$role failed to resume builder session $BUILDER_SESSION_ID; starting a fresh builder session"
+    BUILDER_SESSION_ID=""
+  fi
+
+  cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --cd "$WORKDIR")
   if [[ -n "$model" ]]; then
     cmd+=(--model "$model")
   fi
   cmd+=(-)
 
-  if ! printf '%s\n' "$prompt_text" | "${cmd[@]}"; then
+  effective_prompt+=$'\n'
+  effective_prompt+=$'\n'
+  effective_prompt+="Builder session tag: ${BUILDER_SESSION_TAG}"
+
+  if ! printf '%s\n' "$effective_prompt" | "${cmd[@]}"; then
     log "$role codex execution failed"
     return 1
   fi
 
+  discovered_session_id="$(discover_builder_session_id "$BUILDER_SESSION_TAG" || true)"
+  [[ -n "$discovered_session_id" ]] || die "failed to discover builder session id for tag: $BUILDER_SESSION_TAG"
+  BUILDER_SESSION_ID="$discovered_session_id"
+  log "builder session established: $BUILDER_SESSION_ID"
   return 0
+}
+
+refresh_builder_session_tag() {
+  BUILDER_SESSION_TAG="builder-session-${RUN_ID}-take-${CURRENT_TAKE}"
 }
 
 write_reviewer_output_schema() {
@@ -173,29 +226,6 @@ write_reviewer_output_schema() {
     },
     "approve_merge": {
       "type": "boolean"
-    }
-  }
-}
-EOF_SCHEMA
-  printf '%s\n' "$schema_file"
-}
-
-write_builder_output_schema() {
-  local schema_file
-  schema_file="$(mktemp)"
-  cat > "$schema_file" <<'EOF_SCHEMA'
-{
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["result", "comment"],
-  "properties": {
-    "result": {
-      "type": "string",
-      "enum": ["success", "failed_after_3_retries"]
-    },
-    "comment": {
-      "type": "string",
-      "minLength": 1
     }
   }
 }
@@ -387,6 +417,7 @@ Cleanup request:
 - Current commit: ${current_commit}
 - Work branch: ${CURRENT_WORK_BRANCH}
 - Target branch: ${TARGET_BASE_BRANCH}
+- Builder cycle id: ${CURRENT_BUILDER_CYCLE_ID}
 - tracked_dirty: ${tracked_dirty}
 - new_untracked_outside_baseline:
 ${untracked_msg}
@@ -399,7 +430,11 @@ Do the following now:
 
 After finishing, exit."
 
-    if ! run_codex_prompt "builder_cleanup" "$MODEL_BUILDER" "$cleanup_prompt"; then
+    cleanup_prompt+=$'\n'
+    cleanup_prompt+=$'\n'
+    cleanup_prompt+="4) If the active plan exists, keep the execplan-builder-status and execplan-builder-comment blocks aligned with the current outcome before you exit, and preserve the builder cycle id shown above in both blocks."
+
+    if ! run_builder_prompt "builder_cleanup" "$MODEL_BUILDER" "$cleanup_prompt"; then
       log "builder cleanup attempt ${attempt} failed"
       return 1
     fi
@@ -574,7 +609,7 @@ EOF_NOTE
 
 load_plan_runtime_metadata() {
   local plan_path="$1"
-  local abs_path plan_target_branch plan_pr_url plan_pr_title plan_branch_slug plan_take plan_body
+  local abs_path plan_target_branch plan_pr_url plan_pr_title plan_branch_slug plan_take plan_body plan_builder_session_id
 
   abs_path="$(plan_abs_path "$WORKDIR" "$plan_path")"
   [[ -f "$abs_path" ]] || die "plan file not found: $plan_path"
@@ -585,6 +620,7 @@ load_plan_runtime_metadata() {
   plan_pr_title="$(read_plan_scalar "$abs_path" "execplan_pr_title")"
   plan_branch_slug="$(trim_line "$(read_plan_scalar "$abs_path" "execplan_branch_slug")")"
   plan_take="$(trim_line "$(read_plan_scalar "$abs_path" "execplan_take")")"
+  plan_builder_session_id="$(trim_line "$(read_plan_scalar "$abs_path" "execplan_builder_session_id")")"
   plan_body="$(read_plan_block "$abs_path" "$EXECPLAN_PR_BODY_START" "$EXECPLAN_PR_BODY_END")"
 
   if [[ -n "$plan_target_branch" && "$plan_target_branch" != "$TARGET_BASE_BRANCH" ]]; then
@@ -606,6 +642,7 @@ load_plan_runtime_metadata() {
   if is_positive_int "${plan_take:-0}"; then
     CURRENT_TAKE="$plan_take"
   fi
+  BUILDER_SESSION_ID="$plan_builder_session_id"
 
   if [[ -n "$PR_TITLE" ]]; then
     PR_TITLE_BASE="$(strip_take_suffix "$PR_TITLE")"
@@ -615,13 +652,115 @@ load_plan_runtime_metadata() {
   fi
 }
 
+plan_progress_all_checked() {
+  local plan="$1"
+
+  awk '
+    /^##[[:space:]]+Progress([[:space:]]|$)/ { in_progress = 1; next }
+    /^##[[:space:]]+/ && in_progress { exit }
+    in_progress && /^[[:space:]]*-[[:space:]]+\[[ xX]\]/ {
+      seen = 1
+      if ($0 ~ /\[[[:space:]]\]/) {
+        unchecked = 1
+      }
+    }
+    END {
+      if (seen && !unchecked) {
+        exit 0
+      }
+      exit 1
+    }
+  ' "$plan"
+}
+
+extract_builder_result_from_plan() {
+  local plan="$1"
+  local expected_cycle_id="$2"
+  local status status_block status_cycle_id
+
+  status_block="$(read_plan_block "$plan" "$EXECPLAN_BUILDER_STATUS_START" "$EXECPLAN_BUILDER_STATUS_END")"
+  status_cycle_id="$(trim_line "$(read_scalar_from_text "$status_block" "execplan_builder_cycle_id")")"
+  if [[ -n "$expected_cycle_id" && "$status_cycle_id" == "$expected_cycle_id" ]]; then
+    status="$(trim_line "$(read_scalar_from_text "$status_block" "execplan_builder_status")")"
+    case "$status" in
+      success|failed_after_3_retries)
+        printf '%s\n' "$status"
+        return 0
+        ;;
+    esac
+  fi
+
+  if plan_progress_all_checked "$plan"; then
+    printf 'success\n'
+    return 0
+  fi
+
+  printf 'failed_after_3_retries\n'
+}
+
+extract_builder_comment_from_plan() {
+  local plan="$1"
+  local result="$2"
+  local expected_cycle_id="$3"
+  local comment_block comment_cycle_id comment_body
+
+  comment_block="$(read_plan_block "$plan" "$EXECPLAN_BUILDER_COMMENT_START" "$EXECPLAN_BUILDER_COMMENT_END")"
+  comment_cycle_id="$(trim_line "$(read_scalar_from_text "$comment_block" "execplan_builder_cycle_id")")"
+  if [[ -n "$expected_cycle_id" && "$comment_cycle_id" == "$expected_cycle_id" ]]; then
+    comment_body="$(awk '
+      BEGIN { skipped = 0 }
+      !skipped && $0 ~ /^[[:space:]-]*execplan_builder_cycle_id:[[:space:]]*/ {
+        skipped = 1
+        next
+      }
+      { print }
+    ' <<< "$comment_block")"
+  else
+    comment_body=""
+  fi
+
+  comment_body="$(trim_trailing_blank_lines "$comment_body")"
+  comment_body="$(sed -E '1{/^[[:space:]]*$/d;}' <<< "$comment_body")"
+
+  if [[ -n "$(printf '%s' "$comment_body" | tr -d '[:space:]')" ]]; then
+    printf '%s\n' "$comment_body"
+    return 0
+  fi
+
+  if [[ "$result" == "success" ]]; then
+    printf 'Builder completed successfully.\n'
+    return 0
+  fi
+
+  printf 'Builder failed after up to three implementation attempts.\n'
+}
+
+persist_builder_session_id_to_plan_if_possible() {
+  local plan_path="$1"
+  local abs_path
+
+  [[ -n "$BUILDER_SESSION_ID" ]] || return 0
+  [[ -n "$plan_path" ]] || return 0
+
+  abs_path="$(plan_abs_path "$WORKDIR" "$plan_path")"
+  [[ -f "$abs_path" ]] || return 0
+  rg -q -F "$EXECPLAN_METADATA_START" "$abs_path" || return 0
+
+  update_plan_metadata_scalar "$abs_path" "execplan_builder_session_id" "$BUILDER_SESSION_ID"
+}
+
 post_builder_comment_and_handle_result() {
   local stage="$1"
-  local payload_json="$2"
+  local plan_path="$2"
+  local builder_cycle_id="$3"
+  local plan_abs_path
   local result comment_body
 
-  result="$(jq -r '.result' <<< "$payload_json")"
-  comment_body="$(jq -r '.comment' <<< "$payload_json")"
+  plan_abs_path="$(plan_abs_path "$WORKDIR" "$plan_path")"
+  [[ -f "$plan_abs_path" ]] || die "builder stage ${stage} requires plan file: $plan_path"
+
+  result="$(extract_builder_result_from_plan "$plan_abs_path" "$builder_cycle_id")"
+  comment_body="$(extract_builder_comment_from_plan "$plan_abs_path" "$result" "$builder_cycle_id")"
 
   [[ -n "$PR_URL" ]] || die "builder stage ${stage} completed without a PR URL"
   ensure_pr_ready "$PR_URL"
@@ -636,17 +775,13 @@ run_builder_cycle() {
   local stage="$1"
   local prompt_text="$2"
   local base_commit="$3"
-  local builder_schema_file builder_payload_json cleanup_result cleanup_kind cleanup_commit
+  local cleanup_result cleanup_kind cleanup_commit
 
-  builder_schema_file="$(write_builder_output_schema)"
-  if ! run_codex_prompt_capture "$stage" "$MODEL_BUILDER" "$prompt_text" "$builder_schema_file"; then
-    rm -f "$builder_schema_file"
+  CURRENT_BUILDER_CYCLE_ID="${RUN_ID}:${stage}:$(date -u +%Y%m%dT%H%M%SZ)"
+
+  if ! run_builder_prompt "$stage" "$MODEL_BUILDER" "$prompt_text"; then
     die "${stage} builder execution failed"
   fi
-  rm -f "$builder_schema_file"
-
-  builder_payload_json="$(parse_builder_payload_json "$LAST_CODEX_OUTPUT" || true)"
-  [[ -n "$builder_payload_json" ]] || die "${stage} builder output was not valid JSON payload"
 
   cleanup_result="$(run_builder_cleanup_until_stable "$base_commit" || true)"
   [[ -n "$cleanup_result" ]] || die "builder cleanup failed at stage ${stage}"
@@ -654,8 +789,10 @@ run_builder_cycle() {
   cleanup_kind="${cleanup_result%%|*}"
   cleanup_commit="${cleanup_result#*|}"
 
+  persist_builder_session_id_to_plan_if_possible "$EXPECTED_PLAN_DOC_FILENAME"
+  auto_stage_commit_and_push "docs(plan): record builder session"
   load_plan_runtime_metadata "$EXPECTED_PLAN_DOC_FILENAME"
-  post_builder_comment_and_handle_result "$stage" "$builder_payload_json"
+  post_builder_comment_and_handle_result "$stage" "$EXPECTED_PLAN_DOC_FILENAME" "$CURRENT_BUILDER_CYCLE_ID"
 
   if [[ "$cleanup_kind" == "changed" ]]; then
     log "new commit detected after builder stage ${stage}: $cleanup_commit"
@@ -666,9 +803,36 @@ run_builder_cycle() {
   LATEST_COMMIT="$cleanup_commit"
 }
 
+builder_report_instructions() {
+  cat <<EOF_REPORT
+- Before every exit, update the active plan with these machine-readable blocks:
+  ## ExecPlan Builder Status
+
+  ${EXECPLAN_BUILDER_STATUS_START}
+  - execplan_builder_cycle_id: ${CURRENT_BUILDER_CYCLE_ID}
+  - execplan_builder_status: success|failed_after_3_retries
+  ${EXECPLAN_BUILDER_STATUS_END}
+
+  ## ExecPlan Builder Comment
+
+  ${EXECPLAN_BUILDER_COMMENT_START}
+  - execplan_builder_cycle_id: ${CURRENT_BUILDER_CYCLE_ID}
+
+  <English PR comment text for the loop to post>
+  ${EXECPLAN_BUILDER_COMMENT_END}
+- Use the exact execplan_builder_cycle_id shown above in both blocks for this builder cycle.
+- Use execplan_builder_status=success only when this builder cycle is complete and ready for reviewer inspection.
+- Use execplan_builder_status=failed_after_3_retries only after 3 implementation attempts fail.
+- On success, the builder comment should summarize hook execution results in English.
+- On failure, the builder comment should explain the concrete failure reason in English.
+- If you have no useful PR comment text, leave the builder comment block empty; the loop script will post a generic success/failure message.
+EOF_REPORT
+}
+
 build_initial_builder_prompt() {
   local plan_bootstrap_instructions=""
   local plan_filename_instructions=""
+  local plan_report_instructions
 
   if [[ "$INITIAL_PR_WAS_PROVIDED" -eq 0 ]]; then
     plan_bootstrap_instructions=$(cat <<EOF_BOOTSTRAP
@@ -685,10 +849,10 @@ EOF_BOOTSTRAP
 - The plan document path for this branch is fixed: ${EXPECTED_PLAN_DOC_FILENAME}
 - The execplan.pre_creation hook already created an empty file at that exact path.
 - Write the current take's plan into that file instead of creating any differently named plan document.
-- Do not include any plan path or filename in your JSON output.
 EOF_PLAN
 )
   fi
+  plan_report_instructions="$(builder_report_instructions)"
 
   cat <<EOF_PROMPT
 You are the BUILDER agent in an autonomous loop.
@@ -719,17 +883,14 @@ Requirements:
 - If you are starting a new take without an existing plan, follow the new-plan lifecycle.
 ${plan_bootstrap_instructions}
 ${plan_filename_instructions}
+- If this plan already contains execplan_builder_session_id, continue in that existing builder thread context.
 - If you create a new ExecPlan in this run, include execplan_target_branch: ${TARGET_BASE_BRANCH}, execplan_branch_slug: ${CURRENT_BRANCH_SLUG}, and execplan_take: ${CURRENT_TAKE} in the plan metadata.
 - If the caller preamble specifies execplan_target_pr_url or other optional metadata, preserve it in the plan.
 - Do not run git commit or git push. The loop script performs commit/push automatically.
 - Keep unrelated baseline untracked files untouched.
 - Try up to 3 implementation attempts before declaring failure.
-- Return exactly one JSON object and nothing else:
-  {"result":"success|failed_after_3_retries","comment":"<english hook-summary-or-failure-reason>"}
-- Use result=success only when implementation is complete for this request.
-- Use result=failed_after_3_retries only after 3 attempts fail.
-- On success, comment must summarize the hook execution results in English.
-- On failed_after_3_retries, comment must explain the concrete failure reason in English.
+${plan_report_instructions}
+After updating the plan and the builder-report blocks, exit. Do not return JSON.
 EOF_PROMPT
 }
 
@@ -738,6 +899,9 @@ build_retake_builder_prompt() {
   local superseded_pr_url="$2"
   local reviewer_comment="$3"
   local reviewer_comment_url="$4"
+  local plan_report_instructions
+
+  plan_report_instructions="$(builder_report_instructions)"
 
   cat <<EOF_PROMPT
 You are the BUILDER agent in an autonomous loop.
@@ -766,17 +930,14 @@ Requirements:
 - The plan document path for this replacement take is fixed: ${EXPECTED_PLAN_DOC_FILENAME}
 - The execplan.pre_creation hook already created an empty file at that exact path.
 - Write the replacement take's plan into that file instead of creating any differently named plan document.
-- Do not include any plan path or filename in your JSON output.
 - Do not modify the superseded plan ${superseded_plan_path}.
 - The new plan must include execplan_target_branch: ${TARGET_BASE_BRANCH}, execplan_branch_slug: ${CURRENT_BRANCH_SLUG}, execplan_take: ${CURRENT_TAKE}, execplan_supersedes_plan: ${superseded_plan_path}, and execplan_supersedes_pr_url: ${superseded_pr_url}.
 - Work only on branch: ${CURRENT_WORK_BRANCH}
 - Do not run git commit or git push. The loop script performs commit/push automatically.
 - Keep unrelated baseline untracked files untouched.
 - Try up to 3 implementation attempts before declaring failure.
-- Return exactly one JSON object and nothing else:
-  {"result":"success|failed_after_3_retries","comment":"<english hook-summary-or-failure-reason>"}
-- On success, comment must summarize the hook execution results in English.
-- On failed_after_3_retries, comment must explain the concrete failure reason in English.
+${plan_report_instructions}
+After updating the replacement plan and the builder-report blocks, exit. Do not return JSON.
 EOF_PROMPT
 }
 
@@ -816,6 +977,8 @@ prepare_next_take_after_rejection() {
   git pull --ff-only origin "$TARGET_BASE_BRANCH" >/dev/null 2>&1 || die "failed to pull target branch origin/$TARGET_BASE_BRANCH"
 
   CURRENT_TAKE=$((CURRENT_TAKE + 1))
+  BUILDER_SESSION_ID=""
+  refresh_builder_session_tag
   next_branch="$(generate_unique_work_branch "$CURRENT_BRANCH_SLUG")"
   git switch -c "$next_branch" >/dev/null 2>&1 || die "failed to create new work branch: $next_branch"
   CURRENT_WORK_BRANCH="$next_branch"
@@ -840,11 +1003,15 @@ PR_TITLE=""
 PR_BODY=""
 INITIAL_PR_WAS_PROVIDED=0
 EXPECTED_PLAN_DOC_FILENAME=""
+CURRENT_PLAN_PATH=""
 MAX_ITERATIONS=20
 MAX_BUILDER_CLEANUP_RETRIES=5
 MAX_REVIEWER_FAILURES=3
 MODEL_BUILDER=""
 MODEL_REVIEWER=""
+BUILDER_SESSION_ID=""
+BUILDER_SESSION_TAG=""
+CURRENT_BUILDER_CYCLE_ID=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -945,7 +1112,7 @@ PATH_CONTEXT="Path context (all paths are from the repository root):
 - Hook naming rule:      only execplan.* and hook.* are valid; strip that namespace, replace '_' and '.' with '-', then prefix execplan-hook- (for example execplan.post_creation -> execplan-hook-post-creation, hook.tooling -> execplan-hook-tooling)
 - Sandbox policy:        .agents/skills/execplan-sandbox-escalation/SKILL.md
 - Plans dir:             eternal-cycler-out/plans/
-- ExecPlan metadata:     use the execplan-metadata and execplan-pr-body marker blocks inside the plan file
+- ExecPlan metadata:     use the execplan-metadata, execplan-pr-body, execplan-builder-status, and execplan-builder-comment marker blocks inside the plan file
 Paths to policy docs and gate script are relative to ${SUBMODULE_REL}/. Paths to hooks and plans are relative to the repository root."
 
 if [[ -n "$(git ls-files -u)" ]]; then
@@ -967,6 +1134,7 @@ if [[ -n "$PR_URL" ]]; then
   [[ -f "$(plan_abs_path "$WORKDIR" "$EXPECTED_PLAN_DOC_FILENAME")" ]] || die "resume requires the fixed plan document path to exist: $EXPECTED_PLAN_DOC_FILENAME"
   "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" --pr-url "$PR_URL" >/dev/null
   validate_existing_pr_context "$PR_URL"
+  load_plan_runtime_metadata "$EXPECTED_PLAN_DOC_FILENAME"
 else
   "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" --head-branch "$CURRENT_WORK_BRANCH" >/dev/null
   "$SCRIPT_DIR/execplan_gate.sh" --event execplan.pre_creation >/dev/null
@@ -989,6 +1157,7 @@ done < <(git ls-files --others --exclude-standard)
 START_COMMIT="$(git rev-parse HEAD)"
 LATEST_COMMIT="$START_COMMIT"
 RUN_ID="loop-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+refresh_builder_session_tag
 
 log "loop started (work_branch=$CURRENT_WORK_BRANCH, target_branch=$TARGET_BASE_BRANCH, pr_url=$PR_URL, expected_plan=$EXPECTED_PLAN_DOC_FILENAME, start_commit=$START_COMMIT, run_id=$RUN_ID)"
 

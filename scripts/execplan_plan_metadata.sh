@@ -4,6 +4,10 @@ EXECPLAN_METADATA_START="<!-- execplan-metadata:start -->"
 EXECPLAN_METADATA_END="<!-- execplan-metadata:end -->"
 EXECPLAN_PR_BODY_START="<!-- execplan-pr-body:start -->"
 EXECPLAN_PR_BODY_END="<!-- execplan-pr-body:end -->"
+EXECPLAN_BUILDER_STATUS_START="<!-- execplan-builder-status:start -->"
+EXECPLAN_BUILDER_STATUS_END="<!-- execplan-builder-status:end -->"
+EXECPLAN_BUILDER_COMMENT_START="<!-- execplan-builder-comment:start -->"
+EXECPLAN_BUILDER_COMMENT_END="<!-- execplan-builder-comment:end -->"
 EXECPLAN_REVISION_NOTE_START="<!-- execplan-revision-note:start -->"
 EXECPLAN_REVISION_NOTE_END="<!-- execplan-revision-note:end -->"
 
@@ -94,6 +98,51 @@ replace_or_append_block() {
   fi
 
   mv "$tmp" "$file"
+}
+
+upsert_scalar_in_content() {
+  local content="$1"
+  local key="$2"
+  local value="$3"
+
+  awk -v key="$key" -v value="$value" '
+    BEGIN { updated = 0 }
+    $0 ~ ("^[[:space:]-]*" key ":[[:space:]]*") {
+      if (!updated) {
+        print "- " key ": " value
+        updated = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!updated) {
+        print "- " key ": " value
+      }
+    }
+  ' <<< "$content"
+}
+
+update_plan_metadata_scalar() {
+  local plan="$1"
+  local key="$2"
+  local value="$3"
+  local metadata_inner metadata_block
+
+  metadata_inner="$(read_plan_block "$plan" "$EXECPLAN_METADATA_START" "$EXECPLAN_METADATA_END")"
+  metadata_inner="$(upsert_scalar_in_content "$metadata_inner" "$key" "$value")"
+  metadata_inner="$(trim_trailing_blank_lines "$metadata_inner")"
+
+  metadata_block=$(cat <<EOF_META
+## ExecPlan Metadata
+
+${EXECPLAN_METADATA_START}
+${metadata_inner}
+${EXECPLAN_METADATA_END}
+EOF_META
+)
+
+  replace_or_append_block "$plan" "$EXECPLAN_METADATA_START" "$EXECPLAN_METADATA_END" "$metadata_block"
 }
 
 trim_trailing_blank_lines() {

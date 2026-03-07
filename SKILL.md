@@ -47,6 +47,7 @@ If `target-pr-url` is provided, resolve it with:
    - `execplan_pr_title`
    - `execplan_branch_slug`
    - `execplan_take`
+   - `execplan_builder_session_id` if present
    - PR body block between `<!-- execplan-pr-body:start -->` and `<!-- execplan-pr-body:end -->`
 4. If `execplan_pr_url` is missing or empty, stop. Resume requires an existing PR.
 5. Resolve the requested target branch from user input only if the user explicitly supplied `target-branch` or `target-pr-url`.
@@ -124,8 +125,9 @@ If `target-pr-url` is provided, resolve it with:
 1. Treat `run_builder_reviewer_loop.sh` as non-interactive.
 2. Stream builder/reviewer output to the operator in real time.
 3. Do not surface incidental intermediate JSON emitted by builder/reviewer agents.
-4. The only structured builder payload that matters is:
-   - `{"result":"success|failed_after_3_retries","comment":"<english text>"}`
+4. Builder success/failure and the builder-authored PR comment come from the active plan file:
+   - `<!-- execplan-builder-status:start -->` / `<!-- execplan-builder-status:end -->`
+   - `<!-- execplan-builder-comment:start -->` / `<!-- execplan-builder-comment:end -->`
 5. The reviewer payload remains:
    - `{"pr_url":"<target-pr-url>","comment_body":"<english text>","approve_merge":true|false}`
 6. Do not stop the loop without explicit user instruction. If the loop script exits on its own, report the outcome and ask whether to continue.

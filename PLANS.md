@@ -102,11 +102,23 @@ Optional scalar metadata:
 * `execplan_target_pr_url`
 * `execplan_supersedes_plan`
 * `execplan_supersedes_pr_url`
+* `execplan_builder_session_id`
 
 The current PR body must be stored between:
 
 * `<!-- execplan-pr-body:start -->`
 * `<!-- execplan-pr-body:end -->`
+
+When an ExecPlan is executed by the autonomous builder/reviewer loop, the builder must also keep these plan-local reporting blocks up to date before ending each builder cycle:
+
+* `<!-- execplan-builder-status:start -->` / `<!-- execplan-builder-status:end -->`
+  * contains `- execplan_builder_cycle_id: <current-builder-cycle-id>`
+  * contains `- execplan_builder_status: success|failed_after_3_retries`
+* `<!-- execplan-builder-comment:start -->` / `<!-- execplan-builder-comment:end -->`
+  * starts with `- execplan_builder_cycle_id: <current-builder-cycle-id>`
+  * contains the English PR comment text that the loop script should post
+
+The loop script treats those blocks as the source of truth for builder success/failure and the builder-authored PR comment.
 
 When authoring a new plan before `execplan.post_creation`, include at least `execplan_target_branch`, `execplan_branch_slug`, and `execplan_take` so the hook can preserve the intended target/take context.
 
