@@ -27,8 +27,7 @@ your-repo/
 │       ├── execplan-hook-resume/
 │       ├── execplan-hook-post-completion/
 │       ├── execplan-hook-docs-only/
-│       ├── execplan-hook-tooling/
-│       └── execplan-sandbox-escalation/
+│       └── execplan-hook-tooling/
 └── eternal-cycler-out/
     └── plans/
         ├── active/
@@ -36,7 +35,7 @@ your-repo/
         └── tech-debt/
 ```
 
-The skill directory (`.agents/skills/eternal-cycler/`) is static and never written to at runtime. Dynamic output goes only to `eternal-cycler-out/plans/`.
+The skill directory (`.agents/skills/eternal-cycler/`) is static at runtime. ExecPlan lifecycle artifacts live under `eternal-cycler-out/plans/`, while operator-maintained outside-sandbox policy changes are recorded in `.codex/rules/eternal-cycler.rules`.
 
 ## Prerequisites
 
@@ -75,7 +74,6 @@ Setup copies the shared hook skills, installs the Codex rules file, and creates 
 [setup] OK   copied execplan-hook-post-completion -> .agents/skills/execplan-hook-post-completion
 [setup] OK   copied execplan-hook-docs-only -> .agents/skills/execplan-hook-docs-only
 [setup] OK   copied execplan-hook-tooling -> .agents/skills/execplan-hook-tooling
-[setup] OK   copied execplan-sandbox-escalation -> .agents/skills/execplan-sandbox-escalation
 [setup] OK   copied eternal-cycler.rules -> .codex/rules/eternal-cycler.rules
 [setup] Creating eternal-cycler-out/ output directories under /path/to/your-repo/
 [setup] OK   eternal-cycler-out/plans/active
@@ -127,6 +125,7 @@ New take:
 git switch main
 git pull --ff-only origin main
 git switch -c login-validation-20260307-1430
+# Read .codex/rules/eternal-cycler.rules before any manual out-of-sandbox gate/command.
 .agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
   --task "add input validation to the login form" \
   --target-branch main \
@@ -138,6 +137,7 @@ Resume an existing plan/PR:
 
 ```bash
 PLAN=eternal-cycler-out/plans/active/login-validation-20260307-1430.md
+# Read .codex/rules/eternal-cycler.rules before this manual out-of-sandbox gate.
 .agents/skills/eternal-cycler/scripts/execplan_gate.sh --plan "$PLAN" --event execplan.resume
 .agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
   --task-file task.md \
@@ -159,7 +159,7 @@ git subtree pull \
   --squash
 ```
 
-Re-run setup after updating so the default hooks and allowlist stay in sync:
+Re-run setup after updating so the default hooks and `.codex/rules/eternal-cycler.rules` stay in sync:
 
 ```bash
 bash .agents/skills/eternal-cycler/setup.sh
@@ -183,4 +183,4 @@ See `assets/default-hooks/execplan-hook-tooling/` for an example.
 | `PLANS.md` | ExecPlan authoring and lifecycle policy |
 | `REVIEW.md` | reviewer policy |
 | `SKILL.md` | skill contract for the builder/reviewer loop |
-| `assets/default-hooks/execplan-sandbox-escalation/references/allowed_command_prefixes.md` | approved out-of-sandbox command prefixes |
+| `eternal-cycler.rules` | approved outside-sandbox command prefixes for trusted runtime/manual escalation |

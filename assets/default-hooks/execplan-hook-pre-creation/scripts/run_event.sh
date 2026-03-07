@@ -34,6 +34,9 @@ source "$ETERNAL_CYCLER_ROOT/scripts/execplan_plan_metadata.sh"
 commands=()
 commands+=("git branch --show-current")
 commands+=("git status --short")
+commands+=("git diff --quiet --")
+commands+=("git diff --cached --quiet --")
+commands+=("git ls-files -u")
 commands+=("git log --oneline --decorate --max-count=20")
 
 branch="$(git branch --show-current)"
@@ -44,10 +47,10 @@ if [[ -z "$branch" ]]; then
   exit 1
 fi
 
-status_output="$(git status --short)"
-if [[ -n "$status_output" ]]; then
+git status --short >/dev/null
+if ! git diff --quiet -- || ! git diff --cached --quiet -- || [[ -n "$(git ls-files -u)" ]]; then
   echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
-  echo "FAILURE_SUMMARY=working tree must be clean before execplan.pre_creation"
+  echo "FAILURE_SUMMARY=tracked working tree must be clean before execplan.pre_creation"
   echo "STATUS=fail"
   exit 1
 fi
@@ -74,8 +77,18 @@ if [[ -e "$plan_abs_path" && ! -f "$plan_abs_path" ]]; then
   exit 1
 fi
 
-commands+=(": > ${plan_rel_path}")
-: > "$plan_abs_path"
+if [[ -f "$plan_abs_path" ]]; then
+  if [[ -s "$plan_abs_path" ]]; then
+    echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+    echo "FAILURE_SUMMARY=active plan already exists at ${plan_rel_path}; resume it or choose a new branch"
+    echo "STATUS=fail"
+    exit 1
+  fi
+  commands+=("test ! -s ${plan_rel_path}")
+else
+  commands+=(": > ${plan_rel_path}")
+  : > "$plan_abs_path"
+fi
 
 echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
 echo "FAILURE_SUMMARY=none"

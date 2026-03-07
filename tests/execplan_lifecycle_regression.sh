@@ -58,6 +58,30 @@ setup_fixture_repo() {
   printf '%s\n' "$repo"
 }
 
+attach_bare_origin_and_push_current_branch() {
+  local repo="$1"
+  local tmp remote branch
+
+  tmp="$(mktemp -d)"
+  remote="$tmp/origin.git"
+  TMP_DIRS+=("$tmp")
+
+  git init --bare "$remote" >/dev/null 2>&1 || return 1
+  (
+    cd "$repo" &&
+    git remote add origin "$remote" &&
+    git push -u origin main >/dev/null 2>&1
+  ) || return 1
+
+  branch="$(cd "$repo" && git branch --show-current)"
+  if [[ "$branch" != "main" ]]; then
+    (
+      cd "$repo" &&
+      git push -u origin "$branch" >/dev/null 2>&1
+    ) || return 1
+  fi
+}
+
 write_execplan() {
   local repo="$1"
   local rel_path="$2"
@@ -268,40 +292,49 @@ test_completed_plan_helper_fails_without_completed_plan() {
 }
 
 test_post_completion_allows_hook_events_none() {
-  local repo branch plan_rel
+  local repo branch active_rel active_abs completed_rel completed_abs
 
   repo="$(setup_fixture_repo)" || return 1
   branch="feature-20260308-1400"
-  plan_rel="eternal-cycler-out/plans/completed/${branch}.md"
+  active_rel="eternal-cycler-out/plans/active/${branch}.md"
+  active_abs="$repo/$active_rel"
+  completed_rel="eternal-cycler-out/plans/completed/${branch}.md"
+  completed_abs="$repo/$completed_rel"
   write_execplan \
     "$repo" \
-    "$plan_rel" \
+    "$active_rel" \
     "$branch" \
     "- [x] action_id=a1; mode=serial; depends_on=none; file_locks=none; hook_events=none; worker_type=worker; finalize take." \
     "$(post_creation_pass_entry)"
 
-  run_gate_capture "$repo" --plan "$plan_rel" --event execplan.post_completion
+  run_gate_capture "$repo" --plan "$active_rel" --event execplan.post_completion
   [[ "$GATE_RC" -eq 0 ]] || return 1
-  [[ "$GATE_OUTPUT" == *"STATUS=pass"* ]]
+  [[ "$GATE_OUTPUT" == *"STATUS=pass"* ]] || return 1
+  [[ ! -f "$active_abs" ]] || return 1
+  [[ -f "$completed_abs" ]] || return 1
+  assert_file_contains "$completed_abs" "event_id=execplan.post_completion; attempt=1; status=pass"
 }
 
 test_post_completion_requires_declared_hook_passes() {
-  local repo branch plan_rel plan_abs
+  local repo branch active_rel active_abs completed_abs
 
   repo="$(setup_fixture_repo)" || return 1
   branch="feature-20260308-1500"
-  plan_rel="eternal-cycler-out/plans/completed/${branch}.md"
-  plan_abs="$repo/$plan_rel"
+  active_rel="eternal-cycler-out/plans/active/${branch}.md"
+  active_abs="$repo/$active_rel"
+  completed_abs="$repo/eternal-cycler-out/plans/completed/${branch}.md"
   write_execplan \
     "$repo" \
-    "$plan_rel" \
+    "$active_rel" \
     "$branch" \
     "- [x] action_id=a1; mode=serial; depends_on=none; file_locks=none; hook_events=hook.tooling; worker_type=worker; finalize take." \
     "$(post_creation_pass_entry)"
 
-  run_gate_capture "$repo" --plan "$plan_rel" --event execplan.post_completion
+  run_gate_capture "$repo" --plan "$active_rel" --event execplan.post_completion
   [[ "$GATE_RC" -ne 0 ]] || return 1
-  assert_file_contains "$plan_abs" "failure_summary=missing pass entries for required hook_events: hook.tooling"
+  [[ -f "$active_abs" ]] || return 1
+  [[ ! -f "$completed_abs" ]] || return 1
+  assert_file_contains "$active_abs" "failure_summary=missing pass entries for required hook_events: hook.tooling"
 }
 
 test_gate_rejects_lifecycle_event_in_hook_events() {
@@ -363,12 +396,13 @@ test_gate_rejects_verify_events_field() {
 }
 
 test_gate_blocks_lifecycle_unresolved_before_post_completion() {
-  local repo branch plan_rel plan_abs ledger_lines
+  local repo branch active_rel active_abs completed_abs ledger_lines
 
   repo="$(setup_fixture_repo)" || return 1
   branch="feature-20260308-1900"
-  plan_rel="eternal-cycler-out/plans/completed/${branch}.md"
-  plan_abs="$repo/$plan_rel"
+  active_rel="eternal-cycler-out/plans/active/${branch}.md"
+  active_abs="$repo/$active_rel"
+  completed_abs="$repo/eternal-cycler-out/plans/completed/${branch}.md"
   ledger_lines="$(post_creation_pass_entry)
 $(cat <<'EOF_ENTRY'
 - attempt_record: event_id=execplan.resume; attempt=1; status=fail; started_at=2026-03-08 00:04Z; finished_at=2026-03-08 00:05Z; commands=hook runner execplan.resume; failure_summary=resume blocked; notify_reference=not_requested;
@@ -376,22 +410,24 @@ EOF_ENTRY
 )"
   write_execplan \
     "$repo" \
-    "$plan_rel" \
+    "$active_rel" \
     "$branch" \
     "- [x] action_id=a1; mode=serial; depends_on=none; file_locks=none; hook_events=none; worker_type=worker; finalize take." \
     "$ledger_lines"
 
-  run_gate_capture "$repo" --plan "$plan_rel" --event execplan.post_completion
+  run_gate_capture "$repo" --plan "$active_rel" --event execplan.post_completion
   [[ "$GATE_RC" -ne 0 ]] || return 1
-  assert_file_contains "$plan_abs" "failure_summary=unresolved event status remains for execplan.resume:fail"
+  [[ -f "$active_abs" ]] || return 1
+  [[ ! -f "$completed_abs" ]] || return 1
+  assert_file_contains "$active_abs" "failure_summary=unresolved event status remains for execplan.resume:fail"
 }
 
 test_post_completion_hook_blocks_lifecycle_unresolved() {
-  local repo branch plan_rel ledger_lines
+  local repo branch active_rel ledger_lines
 
   repo="$(setup_fixture_repo)" || return 1
   branch="feature-20260308-2000"
-  plan_rel="eternal-cycler-out/plans/completed/${branch}.md"
+  active_rel="eternal-cycler-out/plans/active/${branch}.md"
   ledger_lines="$(post_creation_pass_entry)
 $(cat <<'EOF_ENTRY'
 - attempt_record: event_id=execplan.resume; attempt=1; status=fail; started_at=2026-03-08 00:04Z; finished_at=2026-03-08 00:05Z; commands=hook runner execplan.resume; failure_summary=resume blocked; notify_reference=not_requested;
@@ -399,14 +435,32 @@ EOF_ENTRY
 )"
   write_execplan \
     "$repo" \
-    "$plan_rel" \
+    "$active_rel" \
     "$branch" \
     "- [x] action_id=a1; mode=serial; depends_on=none; file_locks=none; hook_events=none; worker_type=worker; finalize take." \
     "$ledger_lines"
 
-  run_post_completion_hook_capture "$repo" "$plan_rel"
+  run_post_completion_hook_capture "$repo" "$active_rel"
   [[ "$HOOK_RC" -ne 0 ]] || return 1
   [[ "$HOOK_OUTPUT" == *"FAILURE_SUMMARY=latest hook event is unresolved: execplan.resume:fail"* ]]
+}
+
+test_post_completion_hook_rejects_completed_plan_input() {
+  local repo branch completed_rel
+
+  repo="$(setup_fixture_repo)" || return 1
+  branch="feature-20260308-2050"
+  completed_rel="eternal-cycler-out/plans/completed/${branch}.md"
+  write_execplan \
+    "$repo" \
+    "$completed_rel" \
+    "$branch" \
+    "- [x] action_id=a1; mode=serial; depends_on=none; file_locks=none; hook_events=none; worker_type=worker; finalize take." \
+    "$(post_creation_pass_entry)"
+
+  run_post_completion_hook_capture "$repo" "$completed_rel"
+  [[ "$HOOK_RC" -ne 0 ]] || return 1
+  [[ "$HOOK_OUTPUT" == *"FAILURE_SUMMARY=execplan.post_completion requires an active plan path"* ]]
 }
 
 test_gate_force_closes_escalated_active_plan() {
@@ -432,18 +486,34 @@ test_gate_force_closes_escalated_active_plan() {
   assert_file_contains "$completed_abs" "status=escalated"
 }
 
-test_pre_creation_requires_clean_worktree() {
+test_pre_creation_requires_clean_tracked_worktree() {
   local repo
 
   repo="$(setup_fixture_repo)" || return 1
-  printf 'dirty\n' > "$repo/untracked.txt"
+  printf 'dirty\n' > "$repo/tracked.txt"
+  (
+    cd "$repo" &&
+    git add tracked.txt &&
+    git commit -m "add tracked file" >/dev/null
+  ) || return 1
+  printf 'changed\n' > "$repo/tracked.txt"
 
   run_pre_creation_hook_capture "$repo"
   [[ "$HOOK_RC" -ne 0 ]] || return 1
-  [[ "$HOOK_OUTPUT" == *"FAILURE_SUMMARY=working tree must be clean before execplan.pre_creation"* ]]
+  [[ "$HOOK_OUTPUT" == *"FAILURE_SUMMARY=tracked working tree must be clean before execplan.pre_creation"* ]]
 }
 
-test_pre_creation_truncates_existing_plan_file() {
+test_pre_creation_allows_untracked_files() {
+  local repo
+
+  repo="$(setup_fixture_repo)" || return 1
+  printf 'untracked\n' > "$repo/untracked.txt"
+
+  run_pre_creation_hook_capture "$repo"
+  [[ "$HOOK_RC" -eq 0 ]] || return 1
+}
+
+test_pre_creation_rejects_existing_nonempty_plan_file() {
   local repo branch plan_rel plan_abs
 
   repo="$(setup_fixture_repo)" || return 1
@@ -466,9 +536,10 @@ test_pre_creation_truncates_existing_plan_file() {
   ) || return 1
 
   run_pre_creation_hook_capture "$repo"
-  [[ "$HOOK_RC" -eq 0 ]] || return 1
+  [[ "$HOOK_RC" -ne 0 ]] || return 1
   [[ -f "$plan_abs" ]] || return 1
-  [[ ! -s "$plan_abs" ]]
+  assert_file_contains "$plan_abs" "stale plan content" || return 1
+  [[ "$HOOK_OUTPUT" == *"FAILURE_SUMMARY=active plan already exists at ${plan_rel}; resume it or choose a new branch"* ]]
 }
 
 test_post_creation_requires_draft_pr() {
@@ -581,6 +652,149 @@ EOF_STUB
 
   [[ "$LOOP_RC" -ne 0 ]] || return 1
   [[ "$LOOP_OUTPUT" == *"new takes require a draft PR; existing open PR is not draft"* ]]
+}
+
+test_loop_force_closes_failed_builder_plan() {
+  local repo branch completed_abs pr_url
+
+  repo="$(setup_fixture_repo)" || return 1
+  branch="feature-20260308-2330"
+  pr_url="https://github.com/example/repo/pull/46"
+  completed_abs="$repo/eternal-cycler-out/plans/completed/${branch}.md"
+
+  (
+    cd "$repo" &&
+    git commit --allow-empty -m "init" >/dev/null &&
+    git switch -c "$branch" >/dev/null
+  ) >/dev/null 2>&1 || return 1
+
+  attach_bare_origin_and_push_current_branch "$repo" || return 1
+
+  mkdir -p "$repo/bin"
+  cat > "$repo/bin/gh" <<EOF_STUB
+#!/usr/bin/env bash
+if [[ "\$1 \$2" == "auth status" ]]; then
+  exit 0
+fi
+if [[ "\$1 \$2" == "pr list" ]]; then
+  cat <<'EOF_JSON'
+[{"url":"${pr_url}","updatedAt":"2026-03-08T00:00:00Z","isDraft":true,"baseRefName":"main","title":"Resume PR","body":"## Summary\n- resumed"}]
+EOF_JSON
+  exit 0
+fi
+if [[ "\$1 \$2" == "pr view" ]]; then
+  if [[ " \$* " == *" --jq "* ]]; then
+    echo "false"
+    exit 0
+  fi
+  cat <<'EOF_JSON'
+{"url":"${pr_url}","title":"Resume PR","body":"## Summary\n- resumed","headRefName":"${branch}","baseRefName":"main","state":"OPEN","isDraft":true}
+EOF_JSON
+  exit 0
+fi
+if [[ "\$1 \$2" == "pr edit" ]]; then
+  exit 0
+fi
+if [[ "\$1 \$2" == "pr comment" ]]; then
+  echo "https://github.com/example/repo/pull/46#issuecomment-1"
+  exit 0
+fi
+exit 1
+EOF_STUB
+  cat > "$repo/bin/codex" <<'EOF_STUB'
+#!/usr/bin/env bash
+if [[ "$1 $2" == "login status" ]]; then
+  exit 0
+fi
+if [[ "$1" == "exec" ]]; then
+  out=""
+  for ((i=1; i<=$#; i++)); do
+    if [[ "${!i}" == "--output-last-message" ]]; then
+      next=$((i + 1))
+      out="${!next}"
+    fi
+  done
+  branch="$(git branch --show-current)"
+  plan="eternal-cycler-out/plans/active/${branch}.md"
+  cat > "$plan" <<EOF_PLAN
+# Test Plan
+
+This ExecPlan is a living document.
+
+## Progress
+
+- [ ] action_id=a1; mode=serial; depends_on=none; file_locks=none; hook_events=none; worker_type=worker; resume work.
+
+## Hook Ledger
+
+<!-- hook-ledger:start -->
+- attempt_record: event_id=execplan.post_creation; attempt=1; status=pass; started_at=2026-03-08 00:00Z; finished_at=2026-03-08 00:01Z; commands=hook runner execplan.post_creation; failure_summary=none; notify_reference=not_requested;
+<!-- hook-ledger:end -->
+
+## ExecPlan Metadata
+
+<!-- execplan-metadata:start -->
+- execplan_start_branch: ${branch}
+- execplan_target_branch: main
+- execplan_start_commit: deadbeef
+- execplan_pr_url: ${pr_url}
+- execplan_pr_title: Resume PR
+- execplan_branch_slug: test
+- execplan_take: 1
+<!-- execplan-metadata:end -->
+
+## ExecPlan PR Body
+
+<!-- execplan-pr-body:start -->
+## Summary
+- resumed
+<!-- execplan-pr-body:end -->
+
+## ExecPlan Start Snapshot
+
+<!-- execplan-start-tracked:start -->
+- start_tracked_change: (none)\t(none)
+<!-- execplan-start-tracked:end -->
+
+<!-- execplan-start-untracked:start -->
+- start_untracked_file: (none)\t(none)
+<!-- execplan-start-untracked:end -->
+EOF_PLAN
+  if [[ -n "$out" ]]; then
+    cat <<'EOF_JSON' > "$out"
+{"result":"failed_after_3_retries","comment":"builder failed"}
+EOF_JSON
+  fi
+  cat <<'EOF_JSON'
+{"result":"failed_after_3_retries","comment":"builder failed"}
+EOF_JSON
+  exit 0
+fi
+exit 1
+EOF_STUB
+  chmod +x "$repo/bin/gh" "$repo/bin/codex"
+  (
+    cd "$repo" &&
+    git add bin/ &&
+    git commit -m "add cli stubs" >/dev/null &&
+    git push origin "$branch" >/dev/null 2>&1
+  ) || return 1
+
+  run_loop_capture \
+    "$repo" \
+    --task "new task" \
+    --target-branch main \
+    --pr-title "Resume PR" \
+    --pr-body "## Summary\n- resumed"
+
+  [[ "$LOOP_RC" -ne 0 ]] || return 1
+  [[ ! -f "$repo/eternal-cycler-out/plans/active/${branch}.md" ]] || return 1
+  [[ -f "$completed_abs" ]] || return 1
+  assert_file_contains "$completed_abs" "event_id=execplan.post_creation; attempt=1; status=pass" || return 1
+  assert_file_contains "$completed_abs" "builder_failure_record: stage=builder_initial; status=failed_after_3_retries" || return 1
+  assert_file_contains "$completed_abs" "failure_record:" || return 1
+  assert_file_contains "$completed_abs" "Builder exhausted three retries at builder_initial." || return 1
+  [[ "$LOOP_OUTPUT" == *"builder reported failed_after_3_retries"* ]]
 }
 
 test_resume_loop_invokes_resume_gate_when_missing() {
@@ -713,12 +927,15 @@ run_test "gate rejects non-hook namespaces" test_gate_rejects_non_hook_namespace
 run_test "gate rejects verify_events" test_gate_rejects_verify_events_field
 run_test "gate blocks lifecycle unresolved state before post completion" test_gate_blocks_lifecycle_unresolved_before_post_completion
 run_test "post completion hook blocks lifecycle unresolved state" test_post_completion_hook_blocks_lifecycle_unresolved
+run_test "post completion hook rejects completed plan input" test_post_completion_hook_rejects_completed_plan_input
 run_test "gate force-closes escalated active plan" test_gate_force_closes_escalated_active_plan
-run_test "pre creation requires clean worktree" test_pre_creation_requires_clean_worktree
-run_test "pre creation truncates existing plan file" test_pre_creation_truncates_existing_plan_file
+run_test "pre creation requires clean tracked worktree" test_pre_creation_requires_clean_tracked_worktree
+run_test "pre creation allows untracked files" test_pre_creation_allows_untracked_files
+run_test "pre creation rejects existing nonempty plan file" test_pre_creation_rejects_existing_nonempty_plan_file
 run_test "post creation requires draft pr" test_post_creation_requires_draft_pr
 run_test "supersede flow uses two-arg completed destination helper" test_supersede_flow_uses_two_arg_completed_destination_helper
 run_test "loop rejects non-draft pr reuse for new take" test_loop_rejects_non_draft_pr_reuse_for_new_take
+run_test "loop force closes failed builder plan" test_loop_force_closes_failed_builder_plan
 run_test "resume loop invokes execplan.resume gate when missing" test_resume_loop_invokes_resume_gate_when_missing
 run_test "resume loop skips duplicate execplan.resume gate" test_resume_loop_skips_duplicate_resume_gate
 

@@ -189,7 +189,46 @@ force_close_failed_plan_if_needed() {
     return 0
   fi
 
-  destination="$(generate_unique_completed_plan_destination "$REPO_ROOT" "$abs_path")"
+  destination="$(completed_plan_abs_path_for_active_plan "$REPO_ROOT" "$abs_path")" || return 0
+  if [[ -e "$destination" ]]; then
+    echo "Failed to force-close active plan; completed destination already exists: $destination" >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$destination")"
+  mv "$abs_path" "$destination"
+  PLAN="$(repo_rel_path "$REPO_ROOT" "$destination")"
+}
+
+move_active_plan_to_completed_on_pass() {
+  if [[ "$HAS_PLAN_FILE" -ne 1 || "$EVENT" != "$POST_EVENT_ID" || "$FINAL_STATUS" != "pass" ]]; then
+    return 0
+  fi
+
+  local abs_path rel_path destination
+
+  abs_path="$(plan_abs_path "$REPO_ROOT" "$PLAN")"
+  [[ -f "$abs_path" ]] || return 0
+
+  rel_path="$(repo_rel_path "$REPO_ROOT" "$abs_path")"
+  if [[ "$rel_path" == eternal-cycler-out/plans/completed/* ]]; then
+    PLAN="$rel_path"
+    return 0
+  fi
+
+  if [[ "$rel_path" != eternal-cycler-out/plans/active/* ]]; then
+    echo "execplan.post_completion requires an active plan path, got: $rel_path" >&2
+    exit 1
+  fi
+
+  destination="$(completed_plan_abs_path_for_active_plan "$REPO_ROOT" "$abs_path")" || {
+    echo "failed to derive completed destination for active plan: $rel_path" >&2
+    exit 1
+  }
+  if [[ -e "$destination" ]]; then
+    echo "completed destination already exists for execplan.post_completion: $destination" >&2
+    exit 1
+  fi
+
   mkdir -p "$(dirname "$destination")"
   mv "$abs_path" "$destination"
   PLAN="$(repo_rel_path "$REPO_ROOT" "$destination")"
@@ -705,14 +744,6 @@ if [[ -z "$FINAL_STATUS" ]]; then
   COMMANDS="$(echo "$EVENT_OUTPUT" | sed -n 's/^COMMANDS=//p' | tail -n1)"
   FAILURE_SUMMARY="$(echo "$EVENT_OUTPUT" | sed -n 's/^FAILURE_SUMMARY=//p' | tail -n1)"
   RUN_STATUS="$(echo "$EVENT_OUTPUT" | sed -n 's/^STATUS=//p' | tail -n1)"
-  NEW_PLAN_PATH="$(echo "$EVENT_OUTPUT" | sed -n 's/^PLAN_PATH=//p' | tail -n1)"
-
-  if [[ -n "$NEW_PLAN_PATH" && -f "$NEW_PLAN_PATH" ]]; then
-    PLAN="$NEW_PLAN_PATH"
-    HAS_PLAN_FILE=1
-    ensure_ledger_block
-  fi
-
   if [[ -z "$COMMANDS" ]]; then
     COMMANDS="hook runner ${EVENT}"
   fi
@@ -743,6 +774,7 @@ fi
 FINISHED_AT="$(date -u +"%Y-%m-%d %H:%MZ")"
 ENTRY="- attempt_record: event_id=${EVENT}; attempt=${ATTEMPT}; status=${FINAL_STATUS}; started_at=${STARTED_AT}; finished_at=${FINISHED_AT}; commands=$(sanitize "$COMMANDS"); failure_summary=$(sanitize "$FAILURE_SUMMARY"); notify_reference=$(sanitize "$NOTIFY_REFERENCE");"
 append_ledger_entry "$ENTRY"
+move_active_plan_to_completed_on_pass
 
 if [[ "$FINAL_STATUS" == "escalated" ]]; then
   force_close_failed_plan_if_needed

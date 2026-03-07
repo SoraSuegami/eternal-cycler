@@ -563,9 +563,86 @@ load_completed_plan_runtime_metadata_for_branch() {
   local completed_plan_path
 
   completed_plan_path="$(resolve_completed_plan_rel_path_for_branch "$WORKDIR" "$branch" || true)"
-  [[ -n "$completed_plan_path" ]] || die "builder completed without moving the plan to completed/: $(completed_plan_rel_path_for_branch "$branch")"
+  [[ -n "$completed_plan_path" ]] || die "completed plan not found for branch: $(completed_plan_rel_path_for_branch "$branch")"
 
   load_plan_runtime_metadata "$completed_plan_path"
+}
+
+append_note_to_markdown_section() {
+  local file="$1"
+  local heading="$2"
+  local note="$3"
+  local tmp
+
+  tmp="$(mktemp)"
+  awk -v heading="$heading" -v note="$note" '
+    BEGIN {
+      target = "## " heading
+    }
+    $0 == target {
+      found = 1
+      print
+      print ""
+      print note
+      inserted = 1
+      next
+    }
+    { print }
+    END {
+      if (!found) {
+        print ""
+        print target
+        print ""
+        print note
+      }
+    }
+  ' "$file" > "$tmp"
+  mv "$tmp" "$file"
+}
+
+record_builder_failure_in_plan() {
+  local plan_path="$1"
+  local stage="$2"
+  local failure_comment="$3"
+  local abs_path timestamp progress_note ledger_note outcomes_note
+
+  abs_path="$(plan_abs_path "$WORKDIR" "$plan_path")"
+  [[ -f "$abs_path" ]] || return 0
+
+  timestamp="$(date -u +"%Y-%m-%d %H:%MZ")"
+  progress_note="- failure_record: ${timestamp}; builder exhausted three retries at ${stage}; summary=${failure_comment}"
+  ledger_note="- builder_failure_record: stage=${stage}; status=failed_after_3_retries; recorded_at=${timestamp}; failure_summary=${failure_comment}"
+  outcomes_note="- ${timestamp}: Builder exhausted three retries at ${stage}. The loop force-closed this take as failed. Summary: ${failure_comment}"
+
+  append_note_to_markdown_section "$abs_path" "Progress" "$progress_note"
+  append_note_to_markdown_section "$abs_path" "Hook Ledger" "$ledger_note"
+  append_note_to_markdown_section "$abs_path" "Outcomes & Retrospective" "$outcomes_note"
+}
+
+force_close_failed_builder_plan_for_branch() {
+  local branch="$1"
+  local stage="$2"
+  local failure_comment="$3"
+  local active_plan_path active_abs completed_abs
+
+  active_plan_path="$(plan_rel_path_for_branch "$branch")"
+  active_abs="$(plan_abs_path "$WORKDIR" "$active_plan_path")"
+
+  if [[ -f "$active_abs" ]]; then
+    record_builder_failure_in_plan "$active_plan_path" "$stage" "$failure_comment"
+    load_plan_runtime_metadata "$active_plan_path"
+    completed_abs="$(completed_plan_abs_path_for_active_plan "$WORKDIR" "$active_abs")" || \
+      die "failed to derive completed destination for failed builder plan: $active_plan_path"
+    [[ ! -e "$completed_abs" ]] || die "completed destination already exists for failed builder plan: $completed_abs"
+    mkdir -p "$(dirname "$completed_abs")"
+    mv "$active_abs" "$completed_abs"
+    CURRENT_PLAN_PATH="$(repo_rel_path "$WORKDIR" "$completed_abs")"
+    auto_stage_commit_and_push "docs(plan): force-close failed builder take"
+    load_completed_plan_runtime_metadata_for_branch "$branch"
+    return 0
+  fi
+
+  load_completed_plan_runtime_metadata_for_branch "$branch"
 }
 
 latest_ledger_status_for_event() {
@@ -684,28 +761,20 @@ load_plan_runtime_metadata() {
   fi
 }
 
-post_builder_comment_and_handle_result() {
+post_builder_comment() {
   local stage="$1"
-  local payload_json="$2"
-  local result comment_body
-
-  result="$(jq -r '.result' <<< "$payload_json")"
-  comment_body="$(jq -r '.comment' <<< "$payload_json")"
+  local comment_body="$2"
 
   [[ -n "$PR_URL" ]] || die "builder stage ${stage} completed without a PR URL"
   ensure_pr_ready "$PR_URL"
   post_pr_comment "$PR_URL" "$comment_body" >/dev/null || die "failed to post builder comment to $PR_URL"
-
-  if [[ "$result" == "failed_after_3_retries" ]]; then
-    die "builder reported failed_after_3_retries at stage=${stage}; plan document=${CURRENT_PLAN_PATH:-$EXPECTED_PLAN_DOC_FILENAME}"
-  fi
 }
 
 run_builder_cycle() {
   local stage="$1"
   local prompt_text="$2"
   local base_commit="$3"
-  local builder_schema_file builder_payload_json cleanup_result cleanup_kind cleanup_commit
+  local builder_schema_file builder_payload_json builder_result builder_comment cleanup_result cleanup_kind cleanup_commit
 
   builder_schema_file="$(write_builder_output_schema)"
   if ! run_codex_prompt_capture "$stage" "$MODEL_BUILDER" "$prompt_text" "$builder_schema_file"; then
@@ -716,6 +785,8 @@ run_builder_cycle() {
 
   builder_payload_json="$(parse_builder_payload_json "$LAST_CODEX_OUTPUT" || true)"
   [[ -n "$builder_payload_json" ]] || die "${stage} builder output was not valid JSON payload"
+  builder_result="$(jq -r '.result' <<< "$builder_payload_json")"
+  builder_comment="$(jq -r '.comment' <<< "$builder_payload_json")"
 
   cleanup_result="$(run_builder_cleanup_until_stable "$base_commit" || true)"
   [[ -n "$cleanup_result" ]] || die "builder cleanup failed at stage ${stage}"
@@ -723,8 +794,14 @@ run_builder_cycle() {
   cleanup_kind="${cleanup_result%%|*}"
   cleanup_commit="${cleanup_result#*|}"
 
+  if [[ "$builder_result" == "failed_after_3_retries" ]]; then
+    force_close_failed_builder_plan_for_branch "$CURRENT_WORK_BRANCH" "$stage" "$builder_comment"
+    post_builder_comment "$stage" "$builder_comment"
+    die "builder reported failed_after_3_retries at stage=${stage}; plan document=${CURRENT_PLAN_PATH:-$EXPECTED_PLAN_DOC_FILENAME}"
+  fi
+
   load_completed_plan_runtime_metadata_for_branch "$CURRENT_WORK_BRANCH"
-  post_builder_comment_and_handle_result "$stage" "$builder_payload_json"
+  post_builder_comment "$stage" "$builder_comment"
 
   if [[ "$cleanup_kind" == "changed" ]]; then
     log "new commit detected after builder stage ${stage}: $cleanup_commit"
@@ -790,6 +867,7 @@ ${plan_bootstrap_instructions}
 ${plan_filename_instructions}
 - If you create a new ExecPlan in this run, include execplan_target_branch: ${TARGET_BASE_BRANCH}, execplan_branch_slug: ${CURRENT_BRANCH_SLUG}, and execplan_take: ${CURRENT_TAKE} in the plan metadata.
 - If the caller preamble specifies execplan_target_pr_url or other optional metadata, preserve it in the plan.
+- Keep the plan in eternal-cycler-out/plans/active/ until execplan.post_completion passes through the gate. Do not move the file to completed/ manually.
 - Do not run git commit or git push. The loop script performs commit/push automatically.
 - Keep unrelated baseline untracked files untouched.
 - Try up to 3 implementation attempts before declaring failure.
@@ -798,7 +876,7 @@ ${plan_filename_instructions}
 - Use result=success only when implementation is complete for this request.
 - Use result=failed_after_3_retries only after 3 attempts fail.
 - On success, comment must summarize the hook execution results in English.
-- On failed_after_3_retries, comment must explain the concrete failure reason in English.
+- On failed_after_3_retries, comment must explain the concrete failure reason in English. If possible, also update the plan's Progress and Outcomes & Retrospective sections before returning.
 EOF_PROMPT
 }
 
@@ -838,6 +916,7 @@ Requirements:
 - Do not include any plan path or filename in your JSON output.
 - Do not modify the superseded plan ${superseded_plan_path}.
 - The new plan must include execplan_target_branch: ${TARGET_BASE_BRANCH}, execplan_branch_slug: ${CURRENT_BRANCH_SLUG}, execplan_take: ${CURRENT_TAKE}, execplan_supersedes_plan: ${superseded_plan_path}, and execplan_supersedes_pr_url: ${superseded_pr_url}.
+- Keep the replacement take plan in eternal-cycler-out/plans/active/ until execplan.post_completion passes through the gate. Do not move the file to completed/ manually.
 - Work only on branch: ${CURRENT_WORK_BRANCH}
 - Do not run git commit or git push. The loop script performs commit/push automatically.
 - Keep unrelated baseline untracked files untouched.
@@ -845,7 +924,7 @@ Requirements:
 - Return exactly one JSON object and nothing else:
   {"result":"success|failed_after_3_retries","comment":"<english hook-summary-or-failure-reason>"}
 - On success, comment must summarize the hook execution results in English.
-- On failed_after_3_retries, comment must explain the concrete failure reason in English.
+- On failed_after_3_retries, comment must explain the concrete failure reason in English. If possible, also update the plan's Progress and Outcomes & Retrospective sections before returning.
 EOF_PROMPT
 }
 
@@ -909,6 +988,7 @@ PR_TITLE=""
 PR_BODY=""
 INITIAL_PR_WAS_PROVIDED=0
 EXPECTED_PLAN_DOC_FILENAME=""
+CURRENT_PLAN_PATH=""
 MAX_ITERATIONS=20
 MAX_BUILDER_CLEANUP_RETRIES=5
 MAX_REVIEWER_FAILURES=3
@@ -1009,10 +1089,10 @@ source "$SCRIPT_DIR/execplan_plan_metadata.sh"
 
 PATH_CONTEXT="Path context (all paths are from the repository root):
 - Policy docs:           ${SUBMODULE_REL}/PLANS.md, ${SUBMODULE_REL}/REVIEW.md
+- Outside-sandbox rules: .codex/rules/eternal-cycler.rules
 - ExecPlan gate:         ${SUBMODULE_REL}/scripts/execplan_gate.sh
 - ExecPlan hooks:        .agents/skills/execplan-hook-*/  (copied from ${SUBMODULE_REL}/assets/default-hooks/ by setup.sh)
 - Hook naming rule:      only execplan.* and hook.* are valid; strip that namespace, replace '_' and '.' with '-', then prefix execplan-hook- (for example execplan.post_creation -> execplan-hook-post-creation, hook.tooling -> execplan-hook-tooling)
-- Sandbox policy:        .agents/skills/execplan-sandbox-escalation/SKILL.md
 - Plans dir:             eternal-cycler-out/plans/
 - ExecPlan metadata:     use the execplan-metadata and execplan-pr-body marker blocks inside the plan file
 Paths to policy docs and gate script are relative to ${SUBMODULE_REL}/. Paths to hooks and plans are relative to the repository root."

@@ -53,6 +53,18 @@ completed_plan_abs_path_for_branch() {
   plan_abs_path "$repo_root" "$(completed_plan_rel_path_for_branch "$branch")"
 }
 
+completed_plan_abs_path_for_active_plan() {
+  local repo_root="$1"
+  local plan_path="$2"
+  local abs_path rel_path
+
+  abs_path="$(plan_abs_path "$repo_root" "$plan_path")"
+  rel_path="$(repo_rel_path "$repo_root" "$abs_path")"
+  [[ "$rel_path" == eternal-cycler-out/plans/active/* ]] || return 1
+
+  printf '%s/%s\n' "$repo_root" "eternal-cycler-out/plans/completed/$(basename "$rel_path")"
+}
+
 resolve_completed_plan_rel_path_for_branch() {
   local repo_root="$1"
   local branch="$2"

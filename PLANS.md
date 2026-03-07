@@ -10,8 +10,8 @@ An execution plan ("ExecPlan") is a design document that a coding agent follows 
 ## Behavior when working with ExecPlans
 
 - **Read PLANS.md in full** before authoring or implementing. Start a new plan from the skeleton below.
-- **Proceed autonomously.** Do not prompt the user for "next steps." Resolve ambiguities in the plan itself; do not pause for confirmation unless the escalation bound is reached.
-- **Mark progress immediately.** When a `Progress` action finishes, mark it `[x]` before starting the next action. Commit frequently.
+- **Proceed autonomously after entrypoint selection.** Once the user has chosen the active plan / resume-vs-new-plan entrypoint, do not prompt for "next steps." Resolve ambiguities in the plan itself; do not pause for confirmation unless the escalation bound is reached.
+- **Mark progress immediately.** When a `Progress` action finishes, mark it `[x]` before starting the next action. When operating manually, commit frequently; when running through the loop, the loop script owns checkpoint commits and pushes.
 - **One plan per objective.** Merge sub-agent outcomes into the same ExecPlan; do not create separate sub-plan lifecycle documents.
 - **Record decisions.** All design choices go into the `Decision Log` with rationale. It must always be possible to restart from only the ExecPlan.
 - **Research deeply.** Use prototyping milestones for risky or unknown requirements; read library source code; embed all required knowledge in the plan itself rather than linking to external docs.
@@ -79,7 +79,7 @@ If you change course mid-implementation, document why in `Decision Log` and refl
 * Completed plans → `eternal-cycler-out/plans/completed/`
 * Technical debt → `eternal-cycler-out/plans/tech-debt/`
 
-Completed plans may include both successfully finalized plans and superseded plans from reviewer-rejected takes. A rejected take must not reuse its old plan on a new branch; the replacement take creates a brand new active plan.
+Active plans are the only plans that may still be revised or retried. Completed plans are terminal artifacts only: successfully finalized plans, failed/escalated plans, and superseded plans from reviewer-rejected takes. A rejected take must not reuse its old plan on a new branch; the replacement take creates a brand new active plan.
 
 Files in `tech-debt/` must include explicit repository-relative markdown links to the related plans (active or completed) that introduced, mitigated, or depend on that debt.
 
@@ -129,7 +129,7 @@ Verification is enforced by the gate script and event-local hooks.
 Operational source of truth:
 
 * each installed hook under `.agents/skills/execplan-hook-*/`
-* `.agents/skills/execplan-sandbox-escalation/SKILL.md` and `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
+* `.codex/rules/eternal-cycler.rules`
 * `scripts/execplan_gate.sh`
 
 Templates (do not edit directly; edit copies in `.agents/skills/`): `assets/default-hooks/execplan-hook-*/`
@@ -174,13 +174,13 @@ Max attempts per event: **3**. If the bound is exceeded, the gate marks the even
 
 ### Sandbox escalation policy
 
-Before running any out-of-sandbox command:
+This policy governs manual out-of-sandbox lifecycle invocations and additional out-of-sandbox commands proposed during ExecPlan action execution. The loop's built-in orchestrator commands (`git`, `gh`, `codex exec`) are trusted runtime operations audited separately in `.codex/rules/eternal-cycler.rules`; they do not use a per-command allowlist workflow at runtime.
+
+Before running any additional out-of-sandbox command outside those built-in loop operations:
 
 1. Read `.codex/rules/eternal-cycler.rules`
-2. Read `.agents/skills/execplan-sandbox-escalation/SKILL.md`
-3. Check `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
-4. Use an existing allowed prefix when possible
-5. If none apply, request human approval and add a safely generalized prefix to the reference file
+2. Use an existing allowed prefix from that rules file when possible
+3. If none apply, request human approval and add a safely generalized prefix to `.codex/rules/eternal-cycler.rules`
 
 Skipping this step is a policy violation. The current gate/hook implementation does not independently attest allowlist usage or approval provenance, so callers and reviewers must enforce this policy from the recorded commands and surrounding context.
 
@@ -200,7 +200,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 
 1. **Pre-creation gate** — run out-of-sandbox before creating the plan document:
    `scripts/execplan_gate.sh --event execplan.pre_creation`
-   Validates environment (branch, working tree) and seeds an empty plan file at `eternal-cycler-out/plans/active/<current-branch>.md`. No ledger entry is written because the plan content does not exist yet.
+   Validates environment (branch, tracked working tree) and seeds an empty plan file at `eternal-cycler-out/plans/active/<current-branch>.md` when none exists yet. Benign pre-existing untracked files are allowed. If a non-empty active plan already exists for the current branch, this gate fails instead of clobbering that living document. No ledger entry is written because the plan content does not exist yet.
 2. **Create plan and post-creation gate** — create the plan document in `eternal-cycler-out/plans/active/`, write the full plan, and define all `Progress` action metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `hook_events`, `worker_type`; `hook_events` must contain only `hook.*` IDs; lifecycle events must never appear in `hook_events`). Then immediately run:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.post_creation`
    Before invoking this step, ensure the current branch already has the draft PR for this take; the default `execplan.post_creation` hook fails if the current branch has no PR or only a non-draft PR. This step reads PR metadata and PR body from that draft PR, records the start snapshot, and refreshes the inline ExecPlan metadata / PR body blocks that `execplan.post_completion` requires.
@@ -214,13 +214,14 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 7. **Finalize plan** after all actions pass:
    * update all living-document sections (`Progress`, `Surprises & Discoveries`, `Decision Log`, `Outcomes & Retrospective`)
    * note which hook scripts were referenced, created, modified, or left unchanged, and why
-   * move the plan to `eternal-cycler-out/plans/completed/`
    * ensure all implementation commits are pushed
    * add tech-debt follow-up plans if needed
 8. **Post-completion gate** — run out-of-sandbox:
-   * `scripts/execplan_gate.sh --plan <completed_plan_md> --event execplan.post_completion`
+   * `scripts/execplan_gate.sh --plan <active_plan_md> --event execplan.post_completion`
    * `execplan.post_completion` is validation-only: no `git add`, `git commit`, or `git push`
-   * On failure: the default `execplan.post_completion` hook rolls the plan back to `eternal-cycler-out/plans/active/` before retrying. Use the current plan path (which may be in `active/` after rollback) when invoking the gate on retry. On escalation: same as step 6 — document failure, leave the plan in `eternal-cycler-out/plans/completed/` as failed, and stop.
+   * On pass: the gate appends the pass ledger entry and moves the plan to `eternal-cycler-out/plans/completed/`.
+   * On failure: the plan stays in `eternal-cycler-out/plans/active/` for revision and retry.
+   * On escalation: same as step 6 — document failure, move the plan to `eternal-cycler-out/plans/completed/` as failed, and stop.
    * Lifecycle complete.
 
 ### Resume existing plan

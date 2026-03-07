@@ -9,8 +9,10 @@ This hook executes a lightweight environment check before the ExecPlan document 
 
 - capture branch/status/log context,
 - query PR context when `gh` is available.
-- require a clean working tree before continuing,
-- create or truncate the branch-named plan file so `eternal-cycler-out/plans/active/<current-branch>.md` is empty when the hook returns.
+- require a clean tracked working tree before continuing,
+- tolerate pre-existing untracked files,
+- create the branch-named empty plan file when it does not already exist,
+- fail instead of clobbering an existing non-empty active plan for the current branch.
 
 This event takes **no arguments** — `--plan` is not accepted because the plan file does not exist yet. Branch management is the caller's responsibility.
 

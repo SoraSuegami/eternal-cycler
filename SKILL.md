@@ -5,7 +5,9 @@ description: A skill for automating the loop between the implementation builder 
 
 # Skill: eternal-cycler
 
-This skill drives the builder/reviewer loop and the ExecPlan lifecycle. Dynamic runtime output lives under `eternal-cycler-out/plans/`; PR metadata is stored inline in each plan document, not in separate PR tracking docs.
+This skill drives the builder/reviewer loop and the ExecPlan lifecycle. ExecPlan runtime artifacts live under `eternal-cycler-out/plans/`; PR metadata is stored inline in each plan document, not in separate PR tracking docs. Outside-sandbox policy changes, when explicitly approved, are recorded in `.codex/rules/eternal-cycler.rules`.
+
+The loop's built-in `git`, `gh`, and `codex exec` orchestration commands are trusted runtime operations audited in `.codex/rules/eternal-cycler.rules`. The manual sandbox escalation workflow applies when the operator or agent needs additional out-of-sandbox commands beyond those built-in loop operations.
 
 ## Runtime scripts
 
@@ -58,6 +60,7 @@ If `target-pr-url` is provided, resolve it with:
 8. Pull the latest branch state:
    - `git pull --ff-only origin <execplan_start_branch>`
 9. Run the resume gate:
+   - first read `.codex/rules/eternal-cycler.rules`
    - `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
 10. Compose the builder task:
    - prepend:
@@ -97,6 +100,7 @@ If `target-pr-url` is provided, resolve it with:
 7. Create a unique work branch named `<slug>-YYYYMMDD-HHMM`. If it already exists locally or on origin, append `-1`, `-2`, ... until unique.
 8. Switch to the new work branch.
 9. Run the pre-creation gate:
+   - first read `.codex/rules/eternal-cycler.rules`
    - `scripts/execplan_gate.sh --event execplan.pre_creation`
    - this creates an empty plan file at `eternal-cycler-out/plans/active/<current-branch>.md`
 10. Compose the builder task:
@@ -137,6 +141,7 @@ Resolve the eternal-cycler installation path first.
 Resume existing plan with an open PR:
 
     SKILL_ROOT=<path-to-eternal-cycler>
+    cat .codex/rules/eternal-cycler.rules
     git switch <execplan_start_branch>
     git pull --ff-only origin <execplan_start_branch>
     $SKILL_ROOT/scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume
@@ -151,6 +156,7 @@ Resume existing plan with an open PR:
 New plan:
 
     SKILL_ROOT=<path-to-eternal-cycler>
+    cat .codex/rules/eternal-cycler.rules
     git switch <target_branch>
     git pull --ff-only origin <target_branch>
     git switch -c <slug-YYYYMMDD-HHMM>
