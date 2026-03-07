@@ -73,6 +73,14 @@ for skill_dir in "$DEFAULT_HOOKS_DIR"/*/; do
 done
 echo
 
+# Copy project-local Codex execpolicy rules into the consuming repository's .codex/rules/.
+CODEX_RULES_DIR="$REPO_ROOT/.codex/rules"
+RULES_SOURCE="$SCRIPT_DIR/eternal-cycler.rules"
+mkdir -p "$CODEX_RULES_DIR"
+cp "$RULES_SOURCE" "$CODEX_RULES_DIR/eternal-cycler.rules"
+log "OK   copied eternal-cycler.rules -> .codex/rules/eternal-cycler.rules"
+echo
+
 # Create the output directory tree used at runtime.
 # Only plans/ are consumed-repo-local and must not live inside the eternal-cycler skill directory.
 log "Creating eternal-cycler-out/ output directories under ${REPO_ROOT}/"

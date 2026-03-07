@@ -1,0 +1,194 @@
+# Outside-sandbox rules for eternal-cycler.
+# Audit basis:
+# - Official Codex rules docs: https://developers.openai.com/codex/rules/
+# - Script audit on 2026-03-07 of:
+#   - scripts/run_builder_reviewer_loop.sh
+#   - scripts/run_builder_reviewer_doctor.sh
+#   - scripts/execplan_gate.sh
+#   - assets/default-hooks/execplan-hook-pre-creation/scripts/run_event.sh
+#   - assets/default-hooks/execplan-hook-post-creation/scripts/run_event.sh
+#   - assets/default-hooks/execplan-hook-resume/scripts/run_event.sh
+#   - assets/default-hooks/execplan-hook-post-completion/scripts/run_event.sh
+#
+# Interpretation used here:
+# - "outside-sandbox commands" means commands that should be run outside sandbox for this
+#   project, not every command that merely happens to execute inside an approved script.
+#
+# Commands discovered in audited scripts:
+# - Project entrypoints:
+#   - scripts/run_builder_reviewer_loop.sh
+#   - scripts/run_builder_reviewer_doctor.sh
+#   - scripts/execplan_gate.sh
+# - GitHub / network / repo-state commands that the workflow expects outside sandbox:
+#   - gh auth status
+#   - gh pr status
+#   - gh pr view
+#   - gh pr list
+#   - gh pr comment
+#   - gh pr ready
+#   - gh pr create --draft
+#   - gh pr edit
+#   - gh pr close
+#   - codex login status
+#   - git switch
+#   - git switch -c
+#   - git pull --ff-only origin <branch>
+#   - git push [-u] origin <branch>
+#
+# Commands seen in scripts but intentionally not granted standalone outside-sandbox rules:
+# - Local git inspection and staging/commit helpers:
+#   - git status --short
+#   - git branch --show-current
+#   - git log --oneline --decorate --max-count=20
+#   - git rev-parse ...
+#   - git show-ref --verify --quiet
+#   - git ls-remote ...
+#   - git ls-files ...
+#   - git diff ...
+#   - git hash-object --
+#   - git add ...
+#   - git commit -m ...
+# - Local filesystem / text-processing helpers:
+#   - mkdir -p
+#   - touch
+#   - mv
+#   - rm -f
+#   - awk / sed / rg / jq / cat / grep / tr / head / sort / realpath / date
+# These are expected to run either inside sandbox or only as child processes of the approved
+# entrypoint scripts below.
+#
+# Policy summary from the audited docs:
+# - Any gh command family operation should prefer outside-sandbox execution.
+# - execplan.pre_creation and execplan.post_completion are mandatory outside-sandbox gates.
+# - The hook skill docs currently mark all lifecycle gate invocations as outside-sandbox.
+
+prefix_rule(
+    pattern = [["scripts/run_builder_reviewer_loop.sh", ".agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh"]],
+    decision = "allow",
+    justification = "Primary audited entrypoint for the autonomous builder/reviewer loop. It is designed to run outside sandbox.",
+    match = [
+        "scripts/run_builder_reviewer_loop.sh --task demo --target-branch main --pr-title demo --pr-body body",
+    ],
+)
+
+prefix_rule(
+    pattern = [["scripts/run_builder_reviewer_doctor.sh", ".agents/skills/eternal-cycler/scripts/run_builder_reviewer_doctor.sh"]],
+    decision = "allow",
+    justification = "Audited doctor entrypoint for authentication and PR reachability checks before loop execution.",
+    match = [
+        "scripts/run_builder_reviewer_doctor.sh --head-branch feature-branch",
+        "scripts/run_builder_reviewer_doctor.sh --pr-url https://github.com/org/repo/pull/1",
+    ],
+)
+
+prefix_rule(
+    pattern = [["scripts/execplan_gate.sh", ".agents/skills/eternal-cycler/scripts/execplan_gate.sh"]],
+    decision = "allow",
+    justification = "Audited lifecycle and hook gate entrypoint. The lifecycle hook docs require these gates outside sandbox.",
+    match = [
+        "scripts/execplan_gate.sh --event execplan.pre_creation",
+        "scripts/execplan_gate.sh --plan eternal-cycler-out/plans/active/feat-20260307-1430.md --event execplan.post_creation",
+        "scripts/execplan_gate.sh --plan eternal-cycler-out/plans/completed/feat-20260307-1430.md --event execplan.post_completion",
+    ],
+)
+
+prefix_rule(
+    pattern = ["gh", "auth", "status"],
+    decision = "allow",
+    justification = "GitHub authentication checks should prefer outside-sandbox execution.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "status"],
+    decision = "allow",
+    justification = "PR context checks should prefer outside-sandbox execution.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "view"],
+    decision = "allow",
+    justification = "PR metadata lookups should prefer outside-sandbox execution.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "list"],
+    decision = "allow",
+    justification = "PR discovery by head branch should prefer outside-sandbox execution.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "comment"],
+    decision = "allow",
+    justification = "The reviewed workflow posts builder and reviewer comments remotely to GitHub.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "ready"],
+    decision = "allow",
+    justification = "The reviewed workflow marks draft PRs ready after builder completion.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "create"],
+    decision = "allow",
+    justification = "The reviewed workflow creates draft PRs for new takes and retakes.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "edit"],
+    decision = "allow",
+    justification = "The reviewed workflow updates PR title/body when reusing an existing open PR.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr", "close"],
+    decision = "allow",
+    justification = "The reviewed workflow closes rejected PRs after a replacement take is ready.",
+)
+
+prefix_rule(
+    pattern = ["codex", "login", "status"],
+    decision = "allow",
+    justification = "Codex authentication checks are part of the outside-sandbox doctor flow.",
+)
+
+prefix_rule(
+    pattern = ["git", "switch"],
+    decision = "allow",
+    justification = "The skill's start/resume/retake flows intentionally switch the real repository branch before continuing.",
+    match = [
+        "git switch main",
+        "git switch -c feat-20260307-1430",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "pull", "--ff-only"],
+    decision = "allow",
+    justification = "Target-branch and resume flows intentionally pull the latest remote branch state.",
+    match = [
+        "git pull --ff-only origin main",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "allow",
+    justification = "The loop intentionally pushes work branches and plan updates to origin.",
+    match = [
+        "git push -u origin feat-20260307-1430",
+        "git push origin feat-20260307-1430",
+    ],
+)
+
+prefix_rule(
+    pattern = ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox"],
+    decision = "forbidden",
+    justification = "Do not invoke nested sandbox-bypassing Codex directly. Use the audited loop script instead.",
+    match = [
+        "codex exec --dangerously-bypass-approvals-and-sandbox --cd /tmp/repo -",
+    ],
+    not_match = [
+        "codex login status",
+    ],
+)
