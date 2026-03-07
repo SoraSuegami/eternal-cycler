@@ -128,8 +128,7 @@ has_unresolved_latest_nonpass_event() {
     }
     END {
       for (e in latest) {
-        if (e == "execplan.pre_creation" || e == "execplan.post_creation" || \
-            e == "execplan.resume" || e == "execplan.post_completion") {
+        if (e == "execplan.post_completion") {
           continue
         }
         if (latest[e] == "fail" || latest[e] == "escalated") {
@@ -145,27 +144,6 @@ has_unresolved_latest_nonpass_event() {
 if ! rg -q "event_id=execplan.post_creation;.*status=pass" "$PLAN" && \
    ! rg -q "event_id=execplan.resume;.*status=pass" "$PLAN"; then
   fail_validation "missing pass entry for execplan.post_creation or execplan.resume"
-fi
-
-if ! awk '
-  /event_id=/ && /status=pass/ {
-    event=""
-    n=split($0, parts, ";")
-    for (i=1; i<=n; i++) {
-      if (parts[i] ~ /event_id=/) {
-        gsub(/^.*event_id=/, "", parts[i])
-        gsub(/^ +| +$/, "", parts[i])
-        event=parts[i]
-      }
-    }
-    if (event != "" && event != "execplan.pre_creation" && event != "execplan.post_creation" \
-        && event != "execplan.resume" && event != "execplan.post_completion") {
-      found=1
-    }
-  }
-  END { exit(found?0:1) }
-' "$PLAN"; then
-  fail_validation "missing pass entry for non-lifecycle event"
 fi
 
 required_keys=(

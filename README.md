@@ -2,7 +2,7 @@
 
 An autonomous builder/reviewer loop for [Codex](https://github.com/openai/codex) agents. Install it as a git subtree in your repository to get:
 
-- an autonomous agent loop that writes code, opens or reuses draft PRs, reviews them, and iterates until the reviewer approves
+- an autonomous agent loop that writes code, opens draft PRs, reuses existing draft PRs, reviews them, and iterates until the reviewer approves
 - an ExecPlan lifecycle system with verification gates and escalation bounds
 - inline ExecPlan metadata that stores branch / target branch / PR information directly in each plan document
 
@@ -10,6 +10,9 @@ An autonomous builder/reviewer loop for [Codex](https://github.com/openai/codex)
 
 ```text
 your-repo/
+├── .codex/
+│   └── rules/
+│       └── eternal-cycler.rules
 ├── .agents/
 │   └── skills/
 │       ├── eternal-cycler/
@@ -63,9 +66,17 @@ Then run setup:
 bash .agents/skills/eternal-cycler/setup.sh
 ```
 
-Setup output now creates only the plan directories:
+Setup copies the shared hook skills, installs the Codex rules file, and creates the plan directories:
 
 ```text
+[setup] OK   copied execplan-hook-pre-creation -> .agents/skills/execplan-hook-pre-creation
+[setup] OK   copied execplan-hook-post-creation -> .agents/skills/execplan-hook-post-creation
+[setup] OK   copied execplan-hook-resume -> .agents/skills/execplan-hook-resume
+[setup] OK   copied execplan-hook-post-completion -> .agents/skills/execplan-hook-post-completion
+[setup] OK   copied execplan-hook-docs-only -> .agents/skills/execplan-hook-docs-only
+[setup] OK   copied execplan-hook-tooling -> .agents/skills/execplan-hook-tooling
+[setup] OK   copied execplan-sandbox-escalation -> .agents/skills/execplan-sandbox-escalation
+[setup] OK   copied eternal-cycler.rules -> .codex/rules/eternal-cycler.rules
 [setup] Creating eternal-cycler-out/ output directories under /path/to/your-repo/
 [setup] OK   eternal-cycler-out/plans/active
 [setup] OK   eternal-cycler-out/plans/completed
@@ -75,7 +86,7 @@ Setup output now creates only the plan directories:
 Commit the result:
 
 ```bash
-git add .agents/ eternal-cycler-out/
+git add .codex/ .agents/ eternal-cycler-out/
 git commit -m "chore: install eternal-cycler"
 ```
 
@@ -126,11 +137,13 @@ git switch -c login-validation-20260307-1430
 Resume an existing plan/PR:
 
 ```bash
+PLAN=eternal-cycler-out/plans/active/login-validation-20260307-1430.md
+.agents/skills/eternal-cycler/scripts/execplan_gate.sh --plan "$PLAN" --event execplan.resume
 .agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
   --task-file task.md \
   --target-branch main \
   --pr-title "feat: add login form input validation" \
-  --pr-body "$(sed -n '/<!-- execplan-pr-body:start -->/,/<!-- execplan-pr-body:end -->/p' eternal-cycler-out/plans/active/login-validation-20260307-1430.md | sed '1d;$d')" \
+  --pr-body "$(sed -n '/<!-- execplan-pr-body:start -->/,/<!-- execplan-pr-body:end -->/p' "$PLAN" | sed '1d;$d')" \
   --pr-url https://github.com/your-org/your-repo/pull/42
 ```
 

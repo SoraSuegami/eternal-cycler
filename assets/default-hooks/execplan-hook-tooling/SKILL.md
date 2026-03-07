@@ -5,7 +5,7 @@ description: Hook backing hook.tooling. Use for script/tooling/policy automation
 
 # Hook: hook.tooling
 
-This hook runs syntax and structural checks for automation scripts used by ExecPlan verification tooling.
+This hook runs shell syntax checks for Bash automation scripts used by ExecPlan verification tooling.
 
 ## Script
 

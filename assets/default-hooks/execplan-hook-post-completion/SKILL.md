@@ -18,7 +18,7 @@ Execution policy:
 
 - This event must be executed out-of-sandbox.
 - Run through gate as: `scripts/execplan_gate.sh --plan <completed_plan_md> --event execplan.post_completion` with out-of-sandbox execution.
-- Do not run this event inside sandbox because stable `gh` access is required.
+- Do not run this event inside sandbox; the lifecycle policy requires this gate to execute out-of-sandbox even though the current default hook only inspects plan content and local Git state.
 
 ## Script
 

@@ -29,7 +29,7 @@ For the target PR, verify all of the following before returning a decision:
 4. **Code hygiene.** Check for duplicated logic, unnecessary processing, dead private code paths, and obsolete fallback logic retained without current necessity.
 5. **Benchmarks.** If PR changes can materially affect benchmark outcomes, run relevant benchmarks and record the result delta against the base branch.
 6. **Suspicious changes.** Check for any other unnatural, inconsistent, or suspicious changes.
-7. **Hook Ledger.** Confirm the target ExecPlan includes a `Hook Ledger` with complete gate-attempt history for required lifecycle events and every event referenced by `hook_events`.
+7. **Hook Ledger.** Confirm the target ExecPlan includes a `Hook Ledger` with complete gate-attempt history for ledger-backed lifecycle events (`execplan.post_creation`, `execplan.resume`, and `execplan.post_completion` when attempted) and every event referenced by `hook_events`. Do not require `execplan.pre_creation` in the ledger because it runs before the plan file exists.
 8. **Plan state.** Inspect the latest plan document changed by the PR. If that plan indicates unresolved three-attempt failure/escalation (for example, a force-closed failed plan without remediation), the reviewer comment must explicitly demand remediation.
 
 If all checks pass, the returned payload must explicitly state that outcome and include benchmark results when benchmarks were run.

@@ -36,10 +36,55 @@ plan_rel_path_for_branch() {
   printf 'eternal-cycler-out/plans/active/%s.md\n' "$branch"
 }
 
+completed_plan_rel_path_for_branch() {
+  local branch="$1"
+  printf 'eternal-cycler-out/plans/completed/%s.md\n' "$branch"
+}
+
 plan_abs_path_for_branch() {
   local repo_root="$1"
   local branch="$2"
   plan_abs_path "$repo_root" "$(plan_rel_path_for_branch "$branch")"
+}
+
+completed_plan_abs_path_for_branch() {
+  local repo_root="$1"
+  local branch="$2"
+  plan_abs_path "$repo_root" "$(completed_plan_rel_path_for_branch "$branch")"
+}
+
+resolve_completed_plan_rel_path_for_branch() {
+  local repo_root="$1"
+  local branch="$2"
+  local rel_path abs_path
+
+  rel_path="$(completed_plan_rel_path_for_branch "$branch")"
+  abs_path="$(plan_abs_path "$repo_root" "$rel_path")"
+  [[ -f "$abs_path" ]] || return 1
+
+  printf '%s\n' "$rel_path"
+}
+
+generate_unique_completed_plan_destination() {
+  local repo_root="$1"
+  local source_path="$2"
+  local base_name stem extension candidate suffix=0
+
+  base_name="$(basename "$source_path")"
+  stem="$base_name"
+  extension=""
+  if [[ "$base_name" == *.* ]]; then
+    stem="${base_name%.*}"
+    extension=".${base_name##*.}"
+  fi
+
+  candidate="$repo_root/eternal-cycler-out/plans/completed/$base_name"
+  while [[ -e "$candidate" ]]; do
+    suffix=$((suffix + 1))
+    candidate="$repo_root/eternal-cycler-out/plans/completed/${stem}-${suffix}${extension}"
+  done
+
+  printf '%s\n' "$candidate"
 }
 
 trim_line() {

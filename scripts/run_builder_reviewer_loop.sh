@@ -438,6 +438,13 @@ validate_existing_pr_context() {
   [[ "$CURRENT_PR_BASE" == "$TARGET_BASE_BRANCH" ]] || die "--pr-url base branch ($CURRENT_PR_BASE) must match --target-branch ($TARGET_BASE_BRANCH)"
 }
 
+validate_existing_draft_pr_context() {
+  local pr_url="$1"
+
+  validate_existing_pr_context "$pr_url"
+  [[ "$CURRENT_PR_IS_DRAFT" == "true" ]] || die "new takes require a draft PR; existing open PR is not draft: $pr_url"
+}
+
 resolve_existing_open_pr_for_branch() {
   local branch="$1"
   local open_json
@@ -455,7 +462,7 @@ create_or_reuse_draft_pr_for_branch() {
 
   pr_url="$(resolve_existing_open_pr_for_branch "$branch")"
   if [[ -n "$pr_url" ]]; then
-    validate_existing_pr_context "$pr_url"
+    validate_existing_draft_pr_context "$pr_url"
     gh pr edit "$pr_url" --title "$pr_title" --body "$pr_body" >/dev/null 2>&1 || die "failed to update existing PR metadata: $pr_url"
     sync_pr_state_from_remote "$pr_url"
     printf '%s\n' "$PR_URL"
@@ -517,27 +524,6 @@ generate_unique_work_branch() {
   printf '%s\n' "$candidate"
 }
 
-generate_unique_completed_plan_destination() {
-  local source_path="$1"
-  local base_name stem extension candidate suffix=0
-
-  base_name="$(basename "$source_path")"
-  stem="$base_name"
-  extension=""
-  if [[ "$base_name" == *.* ]]; then
-    stem="${base_name%.*}"
-    extension=".${base_name##*.}"
-  fi
-
-  candidate="$WORKDIR/eternal-cycler-out/plans/completed/$base_name"
-  while [[ -e "$candidate" ]]; do
-    suffix=$((suffix + 1))
-    candidate="$WORKDIR/eternal-cycler-out/plans/completed/${stem}-${suffix}${extension}"
-  done
-
-  printf '%s\n' "$candidate"
-}
-
 move_plan_to_completed_as_superseded() {
   local plan_path="$1"
   local closed_pr_url="$2"
@@ -562,7 +548,7 @@ EOF_NOTE
 
   rel_path="$(repo_rel_path "$WORKDIR" "$abs_path")"
   if [[ "$rel_path" == eternal-cycler-out/plans/active/* ]]; then
-    destination="$(generate_unique_completed_plan_destination "$abs_path")"
+    destination="$(generate_unique_completed_plan_destination "$WORKDIR" "$abs_path")"
     mkdir -p "$(dirname "$destination")"
     mv "$abs_path" "$destination"
     printf '%s\n' "$(repo_rel_path "$WORKDIR" "$destination")"
@@ -570,6 +556,89 @@ EOF_NOTE
   fi
 
   printf '%s\n' "$rel_path"
+}
+
+load_completed_plan_runtime_metadata_for_branch() {
+  local branch="$1"
+  local completed_plan_path
+
+  completed_plan_path="$(resolve_completed_plan_rel_path_for_branch "$WORKDIR" "$branch" || true)"
+  [[ -n "$completed_plan_path" ]] || die "builder completed without moving the plan to completed/: $(completed_plan_rel_path_for_branch "$branch")"
+
+  load_plan_runtime_metadata "$completed_plan_path"
+}
+
+latest_ledger_status_for_event() {
+  local plan_path="$1"
+  local event_id="$2"
+  local abs_path
+
+  abs_path="$(plan_abs_path "$WORKDIR" "$plan_path")"
+  [[ -f "$abs_path" ]] || return 1
+
+  awk -v target="$event_id" '
+    /event_id=/ && /status=/ {
+      event=""
+      status=""
+      n=split($0, parts, ";")
+      for (i=1; i<=n; i++) {
+        if (parts[i] ~ /event_id=/) {
+          tmp=parts[i]
+          gsub(/^.*event_id=/, "", tmp)
+          gsub(/^ +| +$/, "", tmp)
+          event=tmp
+        }
+        if (parts[i] ~ /status=/) {
+          tmp=parts[i]
+          gsub(/^.*status=/, "", tmp)
+          gsub(/^ +| +$/, "", tmp)
+          status=tmp
+        }
+      }
+      if (event == target) {
+        latest=status
+      }
+    }
+    END {
+      if (latest == "") {
+        exit 1
+      }
+      print latest
+    }
+  ' "$abs_path"
+}
+
+plan_has_resume_record_for_commit() {
+  local plan_path="$1"
+  local commit="$2"
+  local abs_path
+
+  abs_path="$(plan_abs_path "$WORKDIR" "$plan_path")"
+  [[ -f "$abs_path" ]] || return 1
+
+  rg -q "^- resume_commit: ${commit}$" "$abs_path"
+}
+
+resume_gate_already_satisfied_for_current_head() {
+  local plan_path="$1"
+  local head_commit latest_resume_status
+
+  head_commit="$(git rev-parse HEAD)"
+  latest_resume_status="$(latest_ledger_status_for_event "$plan_path" "execplan.resume" || true)"
+
+  [[ "$latest_resume_status" == "pass" ]] || return 1
+  plan_has_resume_record_for_commit "$plan_path" "$head_commit"
+}
+
+ensure_resume_gate_for_current_head() {
+  local plan_path="$1"
+
+  if resume_gate_already_satisfied_for_current_head "$plan_path"; then
+    log "execplan.resume already satisfied for current HEAD; skipping duplicate gate invocation"
+    return 0
+  fi
+
+  "$SCRIPT_DIR/execplan_gate.sh" --plan "$plan_path" --event execplan.resume >/dev/null
 }
 
 load_plan_runtime_metadata() {
@@ -628,7 +697,7 @@ post_builder_comment_and_handle_result() {
   post_pr_comment "$PR_URL" "$comment_body" >/dev/null || die "failed to post builder comment to $PR_URL"
 
   if [[ "$result" == "failed_after_3_retries" ]]; then
-    die "builder reported failed_after_3_retries at stage=${stage}; plan document=${EXPECTED_PLAN_DOC_FILENAME}"
+    die "builder reported failed_after_3_retries at stage=${stage}; plan document=${CURRENT_PLAN_PATH:-$EXPECTED_PLAN_DOC_FILENAME}"
   fi
 }
 
@@ -654,7 +723,7 @@ run_builder_cycle() {
   cleanup_kind="${cleanup_result%%|*}"
   cleanup_commit="${cleanup_result#*|}"
 
-  load_plan_runtime_metadata "$EXPECTED_PLAN_DOC_FILENAME"
+  load_completed_plan_runtime_metadata_for_branch "$CURRENT_WORK_BRANCH"
   post_builder_comment_and_handle_result "$stage" "$builder_payload_json"
 
   if [[ "$cleanup_kind" == "changed" ]]; then
@@ -965,8 +1034,10 @@ EXPECTED_PLAN_DOC_FILENAME="$(plan_rel_path_for_branch "$CURRENT_WORK_BRANCH")"
 
 if [[ -n "$PR_URL" ]]; then
   [[ -f "$(plan_abs_path "$WORKDIR" "$EXPECTED_PLAN_DOC_FILENAME")" ]] || die "resume requires the fixed plan document path to exist: $EXPECTED_PLAN_DOC_FILENAME"
-  "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" --pr-url "$PR_URL" >/dev/null
   validate_existing_pr_context "$PR_URL"
+  ensure_resume_gate_for_current_head "$EXPECTED_PLAN_DOC_FILENAME"
+  load_plan_runtime_metadata "$EXPECTED_PLAN_DOC_FILENAME"
+  "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" --pr-url "$PR_URL" >/dev/null
 else
   "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" --head-branch "$CURRENT_WORK_BRANCH" >/dev/null
   "$SCRIPT_DIR/execplan_gate.sh" --event execplan.pre_creation >/dev/null

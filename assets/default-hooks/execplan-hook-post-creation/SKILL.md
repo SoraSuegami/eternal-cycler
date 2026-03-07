@@ -12,7 +12,7 @@ This hook executes the "after plan document creation" workflow:
 - refresh the inline `execplan-metadata` block with branch / target branch / PR fields,
 - refresh the inline `execplan-pr-body` block with the current PR body.
 
-Requires `--plan`. Branch management is the caller's responsibility.
+Requires `--plan`. Branch management is the caller's responsibility. The default implementation also requires that the current branch's draft PR already exists, and it fails if the branch only has a non-draft open PR, because it refreshes the metadata and PR body blocks from that draft PR.
 
 Execution policy:
 

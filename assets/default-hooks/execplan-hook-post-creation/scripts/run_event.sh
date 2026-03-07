@@ -41,12 +41,12 @@ source "$ETERNAL_CYCLER_ROOT/scripts/execplan_plan_metadata.sh"
 commands=()
 commands+=("git branch --show-current")
 commands+=("git status --short")
-commands+=("gh pr view --json url,title,body,state,headRefName,baseRefName")
+commands+=("gh pr view --json url,title,body,state,isDraft,headRefName,baseRefName")
 
 branch="$(git branch --show-current)"
 git status --short >/dev/null
 
-pr_json="$(gh pr view --json url,title,body,state,headRefName,baseRefName 2>/dev/null || true)"
+pr_json="$(gh pr view --json url,title,body,state,isDraft,headRefName,baseRefName 2>/dev/null || true)"
 if [[ -z "$pr_json" ]]; then
   echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
   echo "FAILURE_SUMMARY=failed to resolve current branch PR metadata; create the draft PR before execplan.post_creation"
@@ -57,6 +57,7 @@ fi
 pr_url="$(jq -r '.url // empty' <<< "$pr_json")"
 pr_title="$(jq -r '.title // empty' <<< "$pr_json")"
 pr_body="$(jq -r '.body // empty' <<< "$pr_json")"
+pr_is_draft="$(jq -r '.isDraft // false' <<< "$pr_json")"
 pr_head="$(jq -r '.headRefName // empty' <<< "$pr_json")"
 pr_base="$(jq -r '.baseRefName // empty' <<< "$pr_json")"
 creation_commit="$(git rev-parse HEAD)"
@@ -70,6 +71,12 @@ creation_commit="$(git rev-parse HEAD)"
 [[ "$pr_head" == "$branch" ]] || {
   echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
   echo "FAILURE_SUMMARY=current branch '${branch}' does not match PR head '${pr_head}'"
+  echo "STATUS=fail"
+  exit 1
+}
+[[ "$pr_is_draft" == "true" ]] || {
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=current branch PR must be a draft PR before execplan.post_creation"
   echo "STATUS=fail"
   exit 1
 }

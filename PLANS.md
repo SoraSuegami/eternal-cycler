@@ -176,12 +176,13 @@ Max attempts per event: **3**. If the bound is exceeded, the gate marks the even
 
 Before running any out-of-sandbox command:
 
-1. Read `.agents/skills/execplan-sandbox-escalation/SKILL.md`
-2. Check `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
-3. Use an existing allowed prefix when possible
-4. If none apply, request human approval and add a safely generalized prefix to the reference file
+1. Read `.codex/rules/eternal-cycler.rules`
+2. Read `.agents/skills/execplan-sandbox-escalation/SKILL.md`
+3. Check `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md`
+4. Use an existing allowed prefix when possible
+5. If none apply, request human approval and add a safely generalized prefix to the reference file
 
-Skipping this step is a policy violation that blocks lifecycle progress.
+Skipping this step is a policy violation. The current gate/hook implementation does not independently attest allowlist usage or approval provenance, so callers and reviewers must enforce this policy from the recorded commands and surrounding context.
 
 ### Evidence policy
 
@@ -202,7 +203,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
    Validates environment (branch, working tree) and seeds an empty plan file at `eternal-cycler-out/plans/active/<current-branch>.md`. No ledger entry is written because the plan content does not exist yet.
 2. **Create plan and post-creation gate** — create the plan document in `eternal-cycler-out/plans/active/`, write the full plan, and define all `Progress` action metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `hook_events`, `worker_type`; `hook_events` must contain only `hook.*` IDs; lifecycle events must never appear in `hook_events`). Then immediately run:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.post_creation`
-   This records the start snapshot and refreshes the inline ExecPlan metadata / PR body blocks that `execplan.post_completion` requires.
+   Before invoking this step, ensure the current branch already has the draft PR for this take; the default `execplan.post_creation` hook fails if the current branch has no PR or only a non-draft PR. This step reads PR metadata and PR body from that draft PR, records the start snapshot, and refreshes the inline ExecPlan metadata / PR body blocks that `execplan.post_completion` requires.
 3. **Execute actions** in dependency order. Mark each `[x]` immediately when complete. Out-of-sandbox commands must follow the sandbox escalation policy.
 4. **Run hook after each action** — run `scripts/execplan_gate.sh` for each event in `hook_events`. The gate blocks progress on failure.
 5. **Record all gate attempts** in `## Hook Ledger`.
@@ -219,7 +220,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 8. **Post-completion gate** — run out-of-sandbox:
    * `scripts/execplan_gate.sh --plan <completed_plan_md> --event execplan.post_completion`
    * `execplan.post_completion` is validation-only: no `git add`, `git commit`, or `git push`
-   * On failure: the gate script rolls the plan back to `eternal-cycler-out/plans/active/` before retrying. Use the current plan path (which may be in `active/` after rollback) when invoking the gate on retry. On escalation: same as step 6 — document failure, leave the plan in `eternal-cycler-out/plans/completed/` as failed, and stop.
+   * On failure: the default `execplan.post_completion` hook rolls the plan back to `eternal-cycler-out/plans/active/` before retrying. Use the current plan path (which may be in `active/` after rollback) when invoking the gate on retry. On escalation: same as step 6 — document failure, leave the plan in `eternal-cycler-out/plans/completed/` as failed, and stop.
    * Lifecycle complete.
 
 ### Resume existing plan
@@ -227,7 +228,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 1. **Select plan** from `eternal-cycler-out/plans/active/`. If there is operator feedback, update `Progress` actions and add `hook_events` entries for any newly available hooks.
 2. **Resume gate** — run out-of-sandbox:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
-   Validates that the current branch matches the plan's recorded start branch, refreshes the inline ExecPlan metadata / PR body blocks, and appends a resume record to the plan.
+   Validates that the current branch matches the plan's recorded start branch and that the branch's PR is still `OPEN`, refreshes the inline ExecPlan metadata / PR body blocks from that open PR, and appends a resume record to the plan.
 3. Continue from step 3 of the new-plan path (execute actions, verify, finalize, post-completion gate).
 
 ## Skeleton of a Good ExecPlan

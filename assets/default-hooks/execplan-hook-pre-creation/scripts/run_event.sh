@@ -44,7 +44,13 @@ if [[ -z "$branch" ]]; then
   exit 1
 fi
 
-git status --short >/dev/null
+status_output="$(git status --short)"
+if [[ -n "$status_output" ]]; then
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=working tree must be clean before execplan.pre_creation"
+  echo "STATUS=fail"
+  exit 1
+fi
 git log --oneline --decorate --max-count=20 >/dev/null
 
 if command -v gh >/dev/null 2>&1; then
@@ -68,10 +74,8 @@ if [[ -e "$plan_abs_path" && ! -f "$plan_abs_path" ]]; then
   exit 1
 fi
 
-commands+=("touch ${plan_rel_path}")
-if [[ ! -e "$plan_abs_path" ]]; then
-  : > "$plan_abs_path"
-fi
+commands+=(": > ${plan_rel_path}")
+: > "$plan_abs_path"
 
 echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
 echo "FAILURE_SUMMARY=none"

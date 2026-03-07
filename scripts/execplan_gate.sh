@@ -93,6 +93,9 @@ REPO_ROOT="$(git -C "$SUBMODULE_ROOT" rev-parse --show-toplevel)"
 export ETERNAL_CYCLER_ROOT="$SUBMODULE_ROOT"
 export REPO_ROOT
 
+# shellcheck source=/dev/null
+source "$SUBMODULE_ROOT/scripts/execplan_plan_metadata.sh"
+
 # Hook directories are read from the consuming repo's .agents/skills/ directory.
 # Default hooks are copied there by setup.sh. Supported event namespaces are:
 #   execplan.<lifecycle-name> -> .agents/skills/execplan-hook-<lifecycle-name>/
@@ -164,6 +167,32 @@ resolve_event_script() {
   fi
 
   echo "$script_abs"
+}
+
+force_close_failed_plan_if_needed() {
+  if [[ "$HAS_PLAN_FILE" -ne 1 ]]; then
+    return 0
+  fi
+
+  local abs_path rel_path destination
+
+  abs_path="$(plan_abs_path "$REPO_ROOT" "$PLAN")"
+  [[ -f "$abs_path" ]] || return 0
+
+  rel_path="$(repo_rel_path "$REPO_ROOT" "$abs_path")"
+  if [[ "$rel_path" == eternal-cycler-out/plans/completed/* ]]; then
+    PLAN="$rel_path"
+    return 0
+  fi
+
+  if [[ "$rel_path" != eternal-cycler-out/plans/active/* ]]; then
+    return 0
+  fi
+
+  destination="$(generate_unique_completed_plan_destination "$REPO_ROOT" "$abs_path")"
+  mkdir -p "$(dirname "$destination")"
+  mv "$abs_path" "$destination"
+  PLAN="$(repo_rel_path "$REPO_ROOT" "$destination")"
 }
 
 sanitize() {
@@ -263,28 +292,76 @@ has_pass() {
   '
 }
 
-has_non_lifecycle_pass() {
-  ledger_lines | awk '
-    /event_id=/ && /status=pass/ {
-      event=""
-      n=split($0, parts, ";")
-      for (i=1; i<=n; i++) {
-        if (parts[i] ~ /event_id=/) {
-          gsub(/^.*event_id=/, "", parts[i])
-          gsub(/^ +| +$/, "", parts[i])
-          event=parts[i]
+validate_progress_hook_fields() {
+  if [[ "$HAS_PLAN_FILE" -ne 1 ]]; then
+    return 1
+  fi
+
+  local issues
+  issues="$(
+    awk -v pre="$PRE_CREATION_EVENT_ID" \
+        -v post_creation="$POST_CREATION_EVENT_ID" \
+        -v resume="$RESUME_EVENT_ID" \
+        -v post="$POST_EVENT_ID" '
+      function trim(s) {
+        gsub(/^[[:space:]]+/, "", s)
+        gsub(/[[:space:]]+$/, "", s)
+        return s
+      }
+      function add_issue(msg) {
+        if (!(msg in seen)) {
+          seen[msg]=1
+          issues[++issue_count]=msg
         }
       }
-      if (event != "" \
-          && event != "'$PRE_CREATION_EVENT_ID'" \
-          && event != "'$POST_CREATION_EVENT_ID'" \
-          && event != "'$RESUME_EVENT_ID'" \
-          && event != "'$POST_EVENT_ID'") {
-        found=1
+      /^[[:space:]]*-[[:space:]]*\[[ xX]\]/ {
+        if (index($0, "verify_events=") > 0) {
+          add_issue("verify_events is not supported")
+        }
+        if (index($0, "hook_events=") == 0) {
+          next
+        }
+        n=split($0, parts, ";")
+        for (i=1; i<=n; i++) {
+          if (parts[i] !~ /hook_events=/) {
+            continue
+          }
+          field=parts[i]
+          gsub(/^.*hook_events=/, "", field)
+          field=trim(field)
+          event_count=split(field, events, ",")
+          for (j=1; j<=event_count; j++) {
+            ev=trim(events[j])
+            if (ev == "" || ev == "none" || ev == "-") {
+              continue
+            }
+            if (ev !~ /^hook\./) {
+              if (ev == pre || ev == post_creation || ev == resume || ev == post) {
+                add_issue("hook_events must not contain lifecycle event: " ev)
+              } else {
+                add_issue("hook_events must contain only hook.* values: " ev)
+              }
+            }
+          }
+        }
       }
-    }
-    END { exit(found ? 0 : 1) }
-  '
+      END {
+        if (issue_count == 0) {
+          exit 1
+        }
+        for (i=1; i<=issue_count; i++) {
+          print issues[i]
+        }
+      }
+    ' "$PLAN"
+  )" || true
+
+  if [[ -z "$issues" ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "$issues" | paste -sd '|' - | sed 's/|/; /g'
+  return 0
 }
 
 find_unresolved_nonpass_event() {
@@ -334,16 +411,12 @@ missing_required_hook_event_passes() {
   local required_events event
   required_events="$(
     awk '
-      /hook_events=|verify_events=/ {
+      /^[[:space:]]*-[[:space:]]*\[[ xX]\]/ && /hook_events=/ {
         n=split($0, parts, ";")
         for (i=1; i<=n; i++) {
-          if (parts[i] ~ /hook_events=/ || parts[i] ~ /verify_events=/) {
+          if (parts[i] ~ /hook_events=/) {
             field=parts[i]
-            if (field ~ /hook_events=/) {
-              gsub(/^.*hook_events=/, "", field)
-            } else {
-              gsub(/^.*verify_events=/, "", field)
-            }
+            gsub(/^.*hook_events=/, "", field)
             gsub(/^ +| +$/, "", field)
             split(field, events, ",")
             for (j in events) {
@@ -563,11 +636,19 @@ COMMANDS=""
 FAILURE_SUMMARY=""
 NOTIFY_REFERENCE="not_requested"
 
-if [[ -z "$FINAL_STATUS" ]] && ! is_lifecycle_event "$EVENT"; then
+if [[ -z "$FINAL_STATUS" ]]; then
+  if invalid_hook_fields="$(validate_progress_hook_fields)"; then
+    FINAL_STATUS="fail"
+    COMMANDS="gate prerequisite: Progress hook field validation"
+    FAILURE_SUMMARY="$invalid_hook_fields"
+  fi
+fi
+
+if [[ -z "$FINAL_STATUS" ]]; then
   if unresolved="$(find_unresolved_nonpass_event "$EVENT")"; then
     FINAL_STATUS="fail"
-    COMMANDS="gate prerequisite: unresolved non-pass event scan"
-    FAILURE_SUMMARY="unresolved verification status remains for ${unresolved}; resolve and re-run before advancing"
+    COMMANDS="gate prerequisite: unresolved event status scan"
+    FAILURE_SUMMARY="unresolved event status remains for ${unresolved}; resolve and re-run before advancing"
   fi
 fi
 
@@ -580,10 +661,10 @@ if [[ -z "$FINAL_STATUS" ]] && ! is_lifecycle_event "$EVENT"; then
 fi
 
 if [[ -z "$FINAL_STATUS" && "$EVENT" == "$POST_EVENT_ID" ]]; then
-  if ! has_non_lifecycle_pass; then
+  if ! has_pass "$POST_CREATION_EVENT_ID" && ! has_pass "$RESUME_EVENT_ID"; then
     FINAL_STATUS="fail"
-    COMMANDS="gate prerequisite: require non-lifecycle event pass"
-    FAILURE_SUMMARY="missing pass entry for non-lifecycle hook events"
+    COMMANDS="gate prerequisite: require ${POST_CREATION_EVENT_ID} or ${RESUME_EVENT_ID} pass"
+    FAILURE_SUMMARY="missing pass evidence for ${POST_CREATION_EVENT_ID} or ${RESUME_EVENT_ID}"
   fi
 fi
 
@@ -662,6 +743,10 @@ fi
 FINISHED_AT="$(date -u +"%Y-%m-%d %H:%MZ")"
 ENTRY="- attempt_record: event_id=${EVENT}; attempt=${ATTEMPT}; status=${FINAL_STATUS}; started_at=${STARTED_AT}; finished_at=${FINISHED_AT}; commands=$(sanitize "$COMMANDS"); failure_summary=$(sanitize "$FAILURE_SUMMARY"); notify_reference=$(sanitize "$NOTIFY_REFERENCE");"
 append_ledger_entry "$ENTRY"
+
+if [[ "$FINAL_STATUS" == "escalated" ]]; then
+  force_close_failed_plan_if_needed
+fi
 
 echo "EVENT=$EVENT"
 echo "ATTEMPT=$ATTEMPT"
