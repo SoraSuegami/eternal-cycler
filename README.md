@@ -130,7 +130,7 @@ Resume an existing plan/PR:
   --task-file task.md \
   --target-branch main \
   --pr-title "feat: add login form input validation" \
-  --pr-body "$(sed -n '/<!-- execplan-pr-body:start -->/,/<!-- execplan-pr-body:end -->/p' eternal-cycler-out/plans/active/plan.md | sed '1d;$d')" \
+  --pr-body "$(sed -n '/<!-- execplan-pr-body:start -->/,/<!-- execplan-pr-body:end -->/p' eternal-cycler-out/plans/active/login-validation-20260307-1430.md | sed '1d;$d')" \
   --pr-url https://github.com/your-org/your-repo/pull/42
 ```
 

@@ -31,6 +31,17 @@ plan_abs_path() {
   printf '%s/%s\n' "$repo_root" "$path"
 }
 
+plan_rel_path_for_branch() {
+  local branch="$1"
+  printf 'eternal-cycler-out/plans/active/%s.md\n' "$branch"
+}
+
+plan_abs_path_for_branch() {
+  local repo_root="$1"
+  local branch="$2"
+  plan_abs_path "$repo_root" "$(plan_rel_path_for_branch "$branch")"
+}
+
 trim_line() {
   printf '%s\n' "$1" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
 }

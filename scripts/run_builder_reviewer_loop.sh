@@ -87,19 +87,16 @@ parse_builder_payload_json() {
     else
       .
     end
-    | if (.plan_doc_filename | type) != "string" then error("plan_doc_filename must be string") else . end
     | if (.result | type) != "string" then error("result must be string") else . end
     | if (.comment | type) != "string" then error("comment must be string") else . end
-    | .plan_doc_filename |= (sub("^[[:space:]]+"; "") | sub("[[:space:]]+$"; ""))
     | .comment |= (sub("^[[:space:]]+"; "") | sub("[[:space:]]+$"; ""))
-    | if (.plan_doc_filename | length) == 0 then error("plan_doc_filename must be non-empty") else . end
     | if (.comment | length) == 0 then error("comment must be non-empty") else . end
     | if (.result != "success" and .result != "failed_after_3_retries") then
         error("result must be success or failed_after_3_retries")
       else
         .
       end
-    | {plan_doc_filename, result, comment}
+    | {result, comment}
   ' <<< "$raw" 2>/dev/null
 }
 
@@ -190,12 +187,8 @@ write_builder_output_schema() {
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["plan_doc_filename", "result", "comment"],
+  "required": ["result", "comment"],
   "properties": {
-    "plan_doc_filename": {
-      "type": "string",
-      "minLength": 1
-    },
     "result": {
       "type": "string",
       "enum": ["success", "failed_after_3_retries"]
@@ -298,10 +291,30 @@ get_new_untracked_paths() {
   done < <(git ls-files --others --exclude-standard)
 }
 
+stage_managed_plan_doc_if_needed() {
+  local plan_path="$1"
+  local abs_path
+
+  [[ -n "$plan_path" ]] || return 0
+
+  abs_path="$(plan_abs_path "$WORKDIR" "$plan_path")"
+  [[ -f "$abs_path" ]] || return 0
+
+  if git ls-files --error-unmatch -- "$plan_path" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ -n "$(git ls-files --others --exclude-standard -- "$plan_path")" ]]; then
+    git add -- "$plan_path" >/dev/null 2>&1 || die "failed to stage managed plan document: $plan_path"
+  fi
+}
+
 auto_stage_commit_and_push() {
   local commit_message="$1"
 
   git add -u -- . >/dev/null 2>&1 || die "failed to stage tracked changes"
+  stage_managed_plan_doc_if_needed "$EXPECTED_PLAN_DOC_FILENAME"
+  stage_managed_plan_doc_if_needed "$CURRENT_PLAN_PATH"
 
   mapfile -t NEW_UNTRACKED < <(get_new_untracked_paths)
   if [[ ${#NEW_UNTRACKED[@]} -gt 0 ]]; then
@@ -615,7 +628,7 @@ post_builder_comment_and_handle_result() {
   post_pr_comment "$PR_URL" "$comment_body" >/dev/null || die "failed to post builder comment to $PR_URL"
 
   if [[ "$result" == "failed_after_3_retries" ]]; then
-    die "builder reported failed_after_3_retries at stage=${stage}; plan_doc_filename=$(jq -r '.plan_doc_filename' <<< "$payload_json")"
+    die "builder reported failed_after_3_retries at stage=${stage}; plan document=${EXPECTED_PLAN_DOC_FILENAME}"
   fi
 }
 
@@ -623,7 +636,7 @@ run_builder_cycle() {
   local stage="$1"
   local prompt_text="$2"
   local base_commit="$3"
-  local builder_schema_file builder_payload_json cleanup_result cleanup_kind cleanup_commit plan_doc_filename
+  local builder_schema_file builder_payload_json cleanup_result cleanup_kind cleanup_commit
 
   builder_schema_file="$(write_builder_output_schema)"
   if ! run_codex_prompt_capture "$stage" "$MODEL_BUILDER" "$prompt_text" "$builder_schema_file"; then
@@ -640,9 +653,8 @@ run_builder_cycle() {
 
   cleanup_kind="${cleanup_result%%|*}"
   cleanup_commit="${cleanup_result#*|}"
-  plan_doc_filename="$(jq -r '.plan_doc_filename' <<< "$builder_payload_json")"
 
-  load_plan_runtime_metadata "$plan_doc_filename"
+  load_plan_runtime_metadata "$EXPECTED_PLAN_DOC_FILENAME"
   post_builder_comment_and_handle_result "$stage" "$builder_payload_json"
 
   if [[ "$cleanup_kind" == "changed" ]]; then
@@ -656,6 +668,7 @@ run_builder_cycle() {
 
 build_initial_builder_prompt() {
   local plan_bootstrap_instructions=""
+  local plan_filename_instructions=""
 
   if [[ "$INITIAL_PR_WAS_PROVIDED" -eq 0 ]]; then
     plan_bootstrap_instructions=$(cat <<EOF_BOOTSTRAP
@@ -664,6 +677,16 @@ build_initial_builder_prompt() {
 - Do NOT modify or resume any existing plan document in eternal-cycler-out/plans/.
 - Run execplan.post_creation immediately after writing the new plan.
 EOF_BOOTSTRAP
+)
+  fi
+
+  if [[ -n "$EXPECTED_PLAN_DOC_FILENAME" ]]; then
+    plan_filename_instructions=$(cat <<EOF_PLAN
+- The plan document path for this branch is fixed: ${EXPECTED_PLAN_DOC_FILENAME}
+- The execplan.pre_creation hook already created an empty file at that exact path.
+- Write the current take's plan into that file instead of creating any differently named plan document.
+- Do not include any plan path or filename in your JSON output.
+EOF_PLAN
 )
   fi
 
@@ -695,13 +718,14 @@ Requirements:
 - If you are resuming an existing ExecPlan, keep working from that plan unless the caller explicitly instructs otherwise.
 - If you are starting a new take without an existing plan, follow the new-plan lifecycle.
 ${plan_bootstrap_instructions}
+${plan_filename_instructions}
 - If you create a new ExecPlan in this run, include execplan_target_branch: ${TARGET_BASE_BRANCH}, execplan_branch_slug: ${CURRENT_BRANCH_SLUG}, and execplan_take: ${CURRENT_TAKE} in the plan metadata.
 - If the caller preamble specifies execplan_target_pr_url or other optional metadata, preserve it in the plan.
 - Do not run git commit or git push. The loop script performs commit/push automatically.
 - Keep unrelated baseline untracked files untouched.
 - Try up to 3 implementation attempts before declaring failure.
 - Return exactly one JSON object and nothing else:
-  {"plan_doc_filename":"<relative-plan-path>","result":"success|failed_after_3_retries","comment":"<english hook-summary-or-failure-reason>"}
+  {"result":"success|failed_after_3_retries","comment":"<english hook-summary-or-failure-reason>"}
 - Use result=success only when implementation is complete for this request.
 - Use result=failed_after_3_retries only after 3 attempts fail.
 - On success, comment must summarize the hook execution results in English.
@@ -739,6 +763,10 @@ ${reviewer_comment}
 
 Requirements:
 - Create a new ExecPlan in eternal-cycler-out/plans/active/.
+- The plan document path for this replacement take is fixed: ${EXPECTED_PLAN_DOC_FILENAME}
+- The execplan.pre_creation hook already created an empty file at that exact path.
+- Write the replacement take's plan into that file instead of creating any differently named plan document.
+- Do not include any plan path or filename in your JSON output.
 - Do not modify the superseded plan ${superseded_plan_path}.
 - The new plan must include execplan_target_branch: ${TARGET_BASE_BRANCH}, execplan_branch_slug: ${CURRENT_BRANCH_SLUG}, execplan_take: ${CURRENT_TAKE}, execplan_supersedes_plan: ${superseded_plan_path}, and execplan_supersedes_pr_url: ${superseded_pr_url}.
 - Work only on branch: ${CURRENT_WORK_BRANCH}
@@ -746,7 +774,7 @@ Requirements:
 - Keep unrelated baseline untracked files untouched.
 - Try up to 3 implementation attempts before declaring failure.
 - Return exactly one JSON object and nothing else:
-  {"plan_doc_filename":"<relative-plan-path>","result":"success|failed_after_3_retries","comment":"<english hook-summary-or-failure-reason>"}
+  {"result":"success|failed_after_3_retries","comment":"<english hook-summary-or-failure-reason>"}
 - On success, comment must summarize the hook execution results in English.
 - On failed_after_3_retries, comment must explain the concrete failure reason in English.
 EOF_PROMPT
@@ -791,6 +819,7 @@ prepare_next_take_after_rejection() {
   next_branch="$(generate_unique_work_branch "$CURRENT_BRANCH_SLUG")"
   git switch -c "$next_branch" >/dev/null 2>&1 || die "failed to create new work branch: $next_branch"
   CURRENT_WORK_BRANCH="$next_branch"
+  EXPECTED_PLAN_DOC_FILENAME="$(plan_rel_path_for_branch "$CURRENT_WORK_BRANCH")"
 
   "$SCRIPT_DIR/execplan_gate.sh" --event execplan.pre_creation >/dev/null
 
@@ -810,6 +839,7 @@ PR_URL=""
 PR_TITLE=""
 PR_BODY=""
 INITIAL_PR_WAS_PROVIDED=0
+EXPECTED_PLAN_DOC_FILENAME=""
 MAX_ITERATIONS=20
 MAX_BUILDER_CLEANUP_RETRIES=5
 MAX_REVIEWER_FAILURES=3
@@ -931,8 +961,10 @@ CURRENT_BRANCH_SLUG="$(derive_branch_slug_from_branch "$CURRENT_WORK_BRANCH")"
 PR_TITLE_BASE="$(strip_take_suffix "$PR_TITLE")"
 PR_BODY_BASE="$(strip_revision_note_block "$PR_BODY")"
 CURRENT_TAKE="$(derive_take_from_title "$PR_TITLE")"
+EXPECTED_PLAN_DOC_FILENAME="$(plan_rel_path_for_branch "$CURRENT_WORK_BRANCH")"
 
 if [[ -n "$PR_URL" ]]; then
+  [[ -f "$(plan_abs_path "$WORKDIR" "$EXPECTED_PLAN_DOC_FILENAME")" ]] || die "resume requires the fixed plan document path to exist: $EXPECTED_PLAN_DOC_FILENAME"
   "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" --pr-url "$PR_URL" >/dev/null
   validate_existing_pr_context "$PR_URL"
 else
@@ -958,7 +990,7 @@ START_COMMIT="$(git rev-parse HEAD)"
 LATEST_COMMIT="$START_COMMIT"
 RUN_ID="loop-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
-log "loop started (work_branch=$CURRENT_WORK_BRANCH, target_branch=$TARGET_BASE_BRANCH, pr_url=$PR_URL, start_commit=$START_COMMIT, run_id=$RUN_ID)"
+log "loop started (work_branch=$CURRENT_WORK_BRANCH, target_branch=$TARGET_BASE_BRANCH, pr_url=$PR_URL, expected_plan=$EXPECTED_PLAN_DOC_FILENAME, start_commit=$START_COMMIT, run_id=$RUN_ID)"
 
 run_builder_cycle "builder_initial" "$(build_initial_builder_prompt)" "$START_COMMIT"
 
@@ -1041,6 +1073,7 @@ for ((ITERATION=1; ITERATION<=MAX_ITERATIONS; ITERATION++)); do
   PR_TITLE="$replacement_pr_title"
   PR_BODY="$replacement_pr_body"
   CURRENT_TAKE="$replacement_take"
+  EXPECTED_PLAN_DOC_FILENAME="$(plan_rel_path_for_branch "$CURRENT_WORK_BRANCH")"
   LATEST_COMMIT="$(git rev-parse HEAD)"
 
   builder_prompt="$(build_retake_builder_prompt "$superseded_plan_path" "$old_pr_url" "$reviewer_comment_body" "$comment_url")"

@@ -98,12 +98,14 @@ If `target-pr-url` is provided, resolve it with:
 8. Switch to the new work branch.
 9. Run the pre-creation gate:
    - `scripts/execplan_gate.sh --event execplan.pre_creation`
+   - this creates an empty plan file at `eternal-cycler-out/plans/active/<current-branch>.md`
 10. Compose the builder task:
    - prepend:
      ```
      You are starting a new ExecPlan. Create a new plan document in eternal-cycler-out/plans/active/.
      Do NOT modify or resume any existing plan document in eternal-cycler-out/plans/.
      Run execplan.post_creation gate immediately after writing the new plan.
+     Use the pre-created file whose path matches the current branch name: eternal-cycler-out/plans/active/<current-branch>.md
      Include execplan_target_branch: <target_branch>, execplan_branch_slug: <slug>, and execplan_take: 1 in the plan metadata.
      ```
    - if the user supplied `target-pr-url`, also add:
@@ -123,7 +125,7 @@ If `target-pr-url` is provided, resolve it with:
 2. Stream builder/reviewer output to the operator in real time.
 3. Do not surface incidental intermediate JSON emitted by builder/reviewer agents.
 4. The only structured builder payload that matters is:
-   - `{"plan_doc_filename":"<relative-plan-path>","result":"success|failed_after_3_retries","comment":"<english text>"}`
+   - `{"result":"success|failed_after_3_retries","comment":"<english text>"}`
 5. The reviewer payload remains:
    - `{"pr_url":"<target-pr-url>","comment_body":"<english text>","approve_merge":true|false}`
 6. Do not stop the loop without explicit user instruction. If the loop script exits on its own, report the outcome and ask whether to continue.

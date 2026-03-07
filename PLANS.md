@@ -199,7 +199,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 
 1. **Pre-creation gate** — run out-of-sandbox before creating the plan document:
    `scripts/execplan_gate.sh --event execplan.pre_creation`
-   Validates environment (branch, working tree). No ledger entry is written because the plan file does not exist yet.
+   Validates environment (branch, working tree) and seeds an empty plan file at `eternal-cycler-out/plans/active/<current-branch>.md`. No ledger entry is written because the plan content does not exist yet.
 2. **Create plan and post-creation gate** — create the plan document in `eternal-cycler-out/plans/active/`, write the full plan, and define all `Progress` action metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `hook_events`, `worker_type`; `hook_events` must contain only `hook.*` IDs; lifecycle events must never appear in `hook_events`). Then immediately run:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.post_creation`
    This records the start snapshot and refreshes the inline ExecPlan metadata / PR body blocks that `execplan.post_completion` requires.
