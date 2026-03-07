@@ -504,6 +504,27 @@ generate_unique_work_branch() {
   printf '%s\n' "$candidate"
 }
 
+generate_unique_completed_plan_destination() {
+  local source_path="$1"
+  local base_name stem extension candidate suffix=0
+
+  base_name="$(basename "$source_path")"
+  stem="$base_name"
+  extension=""
+  if [[ "$base_name" == *.* ]]; then
+    stem="${base_name%.*}"
+    extension=".${base_name##*.}"
+  fi
+
+  candidate="$WORKDIR/eternal-cycler-out/plans/completed/$base_name"
+  while [[ -e "$candidate" ]]; do
+    suffix=$((suffix + 1))
+    candidate="$WORKDIR/eternal-cycler-out/plans/completed/${stem}-${suffix}${extension}"
+  done
+
+  printf '%s\n' "$candidate"
+}
+
 move_plan_to_completed_as_superseded() {
   local plan_path="$1"
   local closed_pr_url="$2"
@@ -528,7 +549,7 @@ EOF_NOTE
 
   rel_path="$(repo_rel_path "$WORKDIR" "$abs_path")"
   if [[ "$rel_path" == eternal-cycler-out/plans/active/* ]]; then
-    destination="$WORKDIR/eternal-cycler-out/plans/completed/$(basename "$abs_path")"
+    destination="$(generate_unique_completed_plan_destination "$abs_path")"
     mkdir -p "$(dirname "$destination")"
     mv "$abs_path" "$destination"
     printf '%s\n' "$(repo_rel_path "$WORKDIR" "$destination")"
@@ -760,11 +781,8 @@ close_current_pr_after_rejection() {
 }
 
 prepare_next_take_after_rejection() {
-  local reviewer_comment="$1"
-  local comment_url="$2"
-  local old_pr_url="$3"
-  local superseded_plan_path="$4"
-  local next_branch next_title next_body base_commit builder_prompt
+  local old_pr_url="$1"
+  local next_branch next_title next_body
 
   switch_or_track_branch "$TARGET_BASE_BRANCH"
   git pull --ff-only origin "$TARGET_BASE_BRANCH" >/dev/null 2>&1 || die "failed to pull target branch origin/$TARGET_BASE_BRANCH"
@@ -783,12 +801,6 @@ prepare_next_take_after_rejection() {
 
   PR_URL="$(create_or_reuse_draft_pr_for_branch "$CURRENT_WORK_BRANCH" "$TARGET_BASE_BRANCH" "$PR_TITLE" "$PR_BODY")"
   [[ -n "$PR_URL" ]] || die "failed to create draft PR for retake branch $CURRENT_WORK_BRANCH"
-
-  base_commit="$(git rev-parse HEAD)"
-  LATEST_COMMIT="$base_commit"
-
-  builder_prompt="$(build_retake_builder_prompt "$superseded_plan_path" "$old_pr_url" "$reviewer_comment" "$comment_url")"
-  run_builder_cycle "builder_retake_take_${CURRENT_TAKE}" "$builder_prompt" "$base_commit"
 }
 
 TASK_TEXT=""
@@ -1007,10 +1019,32 @@ for ((ITERATION=1; ITERATION<=MAX_ITERATIONS; ITERATION++)); do
   fi
 
   old_pr_url="$PR_URL"
-  close_current_pr_after_rejection "$old_pr_url"
+  old_work_branch="$CURRENT_WORK_BRANCH"
+
+  prepare_next_take_after_rejection "$old_pr_url"
+
+  replacement_work_branch="$CURRENT_WORK_BRANCH"
+  replacement_pr_url="$PR_URL"
+  replacement_pr_title="$PR_TITLE"
+  replacement_pr_body="$PR_BODY"
+  replacement_take="$CURRENT_TAKE"
+
+  switch_or_track_branch "$old_work_branch"
+  CURRENT_WORK_BRANCH="$old_work_branch"
   superseded_plan_path="$(move_plan_to_completed_as_superseded "$CURRENT_PLAN_PATH" "$old_pr_url" "$reviewer_comment_body")"
   auto_stage_commit_and_push "docs(plan): supersede rejected take"
-  prepare_next_take_after_rejection "$reviewer_comment_body" "$comment_url" "$old_pr_url" "$superseded_plan_path"
+  close_current_pr_after_rejection "$old_pr_url"
+
+  switch_or_track_branch "$replacement_work_branch"
+  CURRENT_WORK_BRANCH="$replacement_work_branch"
+  PR_URL="$replacement_pr_url"
+  PR_TITLE="$replacement_pr_title"
+  PR_BODY="$replacement_pr_body"
+  CURRENT_TAKE="$replacement_take"
+  LATEST_COMMIT="$(git rev-parse HEAD)"
+
+  builder_prompt="$(build_retake_builder_prompt "$superseded_plan_path" "$old_pr_url" "$reviewer_comment_body" "$comment_url")"
+  run_builder_cycle "builder_retake_take_${CURRENT_TAKE}" "$builder_prompt" "$LATEST_COMMIT"
 done
 
 die "max iterations reached without reviewer approve_merge=true for commit $LATEST_COMMIT"
