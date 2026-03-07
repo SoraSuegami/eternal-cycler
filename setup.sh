@@ -74,14 +74,12 @@ done
 echo
 
 # Create the output directory tree used at runtime.
-# plans/ and prs/ are consumed-repo-local and must not live inside the eternal-cycler skill directory.
+# Only plans/ are consumed-repo-local and must not live inside the eternal-cycler skill directory.
 log "Creating eternal-cycler-out/ output directories under ${REPO_ROOT}/"
 for out_dir in \
     eternal-cycler-out/plans/active \
     eternal-cycler-out/plans/completed \
-    eternal-cycler-out/plans/tech-debt \
-    eternal-cycler-out/prs/active \
-    eternal-cycler-out/prs/completed; do
+    eternal-cycler-out/plans/tech-debt; do
   mkdir -p "$REPO_ROOT/$out_dir"
   log "OK   $out_dir"
 done
@@ -94,4 +92,7 @@ log "Output directory: ${REPO_ROOT}/eternal-cycler-out/"
 log ""
 log "To start the builder/reviewer loop:"
 log "  ${SUBMODULE_REL}/scripts/run_builder_reviewer_loop.sh \\"
-log "    --task 'describe the task here'"
+log "    --task 'describe the task here' \\"
+log "    --target-branch main \\"
+log "    --pr-title 'feat: describe the task here' \\"
+log "    --pr-body '## Summary'"

@@ -79,7 +79,36 @@ If you change course mid-implementation, document why in `Decision Log` and refl
 * Completed plans → `eternal-cycler-out/plans/completed/`
 * Technical debt → `eternal-cycler-out/plans/tech-debt/`
 
+Completed plans may include both successfully finalized plans and superseded plans from reviewer-rejected takes. A rejected take must not reuse its old plan on a new branch; the replacement take creates a brand new active plan.
+
 Files in `tech-debt/` must include explicit repository-relative markdown links to the related plans (active or completed) that introduced, mitigated, or depend on that debt.
+
+## ExecPlan Metadata
+
+Every skill-managed ExecPlan stores its runtime branch / PR metadata inline in the plan file.
+
+Required scalar metadata:
+
+* `execplan_start_branch`
+* `execplan_target_branch`
+* `execplan_start_commit`
+* `execplan_pr_url`
+* `execplan_pr_title`
+* `execplan_branch_slug`
+* `execplan_take`
+
+Optional scalar metadata:
+
+* `execplan_target_pr_url`
+* `execplan_supersedes_plan`
+* `execplan_supersedes_pr_url`
+
+The current PR body must be stored between:
+
+* `<!-- execplan-pr-body:start -->`
+* `<!-- execplan-pr-body:end -->`
+
+When authoring a new plan before `execplan.post_creation`, include at least `execplan_target_branch`, `execplan_branch_slug`, and `execplan_take` so the hook can preserve the intended target/take context.
 
 ## Action-Level Parallel Execution
 
@@ -95,7 +124,7 @@ An action is parallelizable only when all `depends_on` actions are complete and 
 
 Verification is enforced by the gate script and event-local hooks.
 
-**Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Hook, plan, and PR tracking paths are relative to the consuming repository root.
+**Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Hook and plan paths are relative to the consuming repository root.
 
 Operational source of truth:
 
@@ -173,7 +202,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
    Validates environment (branch, working tree). No ledger entry is written because the plan file does not exist yet.
 2. **Create plan and post-creation gate** — create the plan document in `eternal-cycler-out/plans/active/`, write the full plan, and define all `Progress` action metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `hook_events`, `worker_type`; `hook_events` must contain only `hook.*` IDs; lifecycle events must never appear in `hook_events`). Then immediately run:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.post_creation`
-   This records the start snapshot, creates the PR tracking doc, and writes the plan linkage metadata that `execplan.post_completion` requires.
+   This records the start snapshot and refreshes the inline ExecPlan metadata / PR body blocks that `execplan.post_completion` requires.
 3. **Execute actions** in dependency order. Mark each `[x]` immediately when complete. Out-of-sandbox commands must follow the sandbox escalation policy.
 4. **Run hook after each action** — run `scripts/execplan_gate.sh` for each event in `hook_events`. The gate blocks progress on failure.
 5. **Record all gate attempts** in `## Hook Ledger`.
@@ -198,7 +227,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 1. **Select plan** from `eternal-cycler-out/plans/active/`. If there is operator feedback, update `Progress` actions and add `hook_events` entries for any newly available hooks.
 2. **Resume gate** — run out-of-sandbox:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
-   Validates that the current branch matches the plan's recorded start branch, refreshes the PR tracking doc, and appends a resume record to the plan.
+   Validates that the current branch matches the plan's recorded start branch, refreshes the inline ExecPlan metadata / PR body blocks, and appends a resume record to the plan.
 3. Continue from step 3 of the new-plan path (execute actions, verify, finalize, post-completion gate).
 
 ## Skeleton of a Good ExecPlan
@@ -236,6 +265,26 @@ Two paths depending on whether you are starting a new plan or resuming an existi
     - `failure_summary`
     - `started_at`
     - `finished_at`
+
+    ## ExecPlan Metadata
+
+    Store the current take's branch / PR metadata inline:
+
+    <!-- execplan-metadata:start -->
+    - execplan_start_branch: <work-branch>
+    - execplan_target_branch: <merge-target-branch>
+    - execplan_start_commit: <commit-sha>
+    - execplan_pr_url: <open-pr-url>
+    - execplan_pr_title: <english-pr-title>
+    - execplan_branch_slug: <branch-slug>
+    - execplan_take: <positive-integer>
+    <!-- execplan-metadata:end -->
+
+    ## ExecPlan PR Body
+
+    <!-- execplan-pr-body:start -->
+    <current PR body markdown>
+    <!-- execplan-pr-body:end -->
 
     ## Surprises & Discoveries
 

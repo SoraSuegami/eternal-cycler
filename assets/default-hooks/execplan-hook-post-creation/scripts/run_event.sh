@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# execplan.post_creation — run immediately after the new plan document is written.
-# Records start snapshot, creates PR tracking doc, and writes plan linkage metadata.
-# Requires --plan. Branch management is the caller's responsibility.
-
 PLAN=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -30,137 +26,180 @@ if [[ -z "$PLAN" || ! -f "$PLAN" ]]; then
   exit 1
 fi
 
-plan_rel="$PLAN"
-if [[ "$plan_rel" == "$PWD/"* ]]; then
-  plan_rel="${plan_rel#"$PWD/"}"
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+ETERNAL_CYCLER_ROOT="${ETERNAL_CYCLER_ROOT:-}"
+if [[ -z "$ETERNAL_CYCLER_ROOT" ]]; then
+  echo "COMMANDS=none"
+  echo "FAILURE_SUMMARY=ETERNAL_CYCLER_ROOT is not set; run through execplan_gate.sh"
+  echo "STATUS=fail"
+  exit 1
 fi
 
-REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+# shellcheck source=/dev/null
+source "$ETERNAL_CYCLER_ROOT/scripts/execplan_plan_metadata.sh"
 
 commands=()
 commands+=("git branch --show-current")
 commands+=("git status --short")
+commands+=("gh pr view --json url,title,body,state,headRefName,baseRefName")
 
 branch="$(git branch --show-current)"
 git status --short >/dev/null
 
-gh_available=0
-if command -v gh >/dev/null 2>&1; then
-  gh_available=1
-  commands+=("gh pr status")
-  commands+=("gh pr view --json number,title,body,state,headRefName,baseRefName,url")
-  set +e
-  gh pr status >/dev/null 2>&1
-  gh pr view --json number,title,body,state,headRefName,baseRefName,url >/dev/null 2>&1
-  set -e
+pr_json="$(gh pr view --json url,title,body,state,headRefName,baseRefName 2>/dev/null || true)"
+if [[ -z "$pr_json" ]]; then
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=failed to resolve current branch PR metadata; create the draft PR before execplan.post_creation"
+  echo "STATUS=fail"
+  exit 1
 fi
 
-tracking_path="${EXECPLAN_PR_TRACKING_PATH:-${REPO_ROOT}/eternal-cycler-out/prs/active/pr_${branch//\//_}.md}"
-# Repo-relative version for writing into the plan document (policy: no absolute paths in docs).
-tracking_path_rel="${tracking_path#"${REPO_ROOT}/"}"
-commands+=("mkdir -p $(dirname "$tracking_path")")
-mkdir -p "$(dirname "$tracking_path")"
-
-creation_date="$(date -u +"%Y-%m-%d %H:%MZ")"
+pr_url="$(jq -r '.url // empty' <<< "$pr_json")"
+pr_title="$(jq -r '.title // empty' <<< "$pr_json")"
+pr_body="$(jq -r '.body // empty' <<< "$pr_json")"
+pr_head="$(jq -r '.headRefName // empty' <<< "$pr_json")"
+pr_base="$(jq -r '.baseRefName // empty' <<< "$pr_json")"
 creation_commit="$(git rev-parse HEAD)"
-pr_url="${EXECPLAN_MANUAL_PR_URL:-"(not available locally)"}"
-pr_title="(not available locally)"
-pr_state="unknown"
-pr_head="$branch"
-pr_base="(unknown)"
 
-if [[ "$gh_available" -eq 1 ]]; then
-  pr_url="$(gh pr view --json url --jq '.url' 2>/dev/null || echo "(not available locally)")"
-  pr_title="$(gh pr view --json title --jq '.title' 2>/dev/null || echo "(not available locally)")"
-  pr_state="$(gh pr view --json state --jq '.state' 2>/dev/null || echo "unknown")"
-  pr_head="$(gh pr view --json headRefName --jq '.headRefName' 2>/dev/null || echo "$branch")"
-  pr_base="$(gh pr view --json baseRefName --jq '.baseRefName' 2>/dev/null || echo "(unknown)")"
+[[ -n "$pr_url" ]] || {
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=current branch PR URL is empty"
+  echo "STATUS=fail"
+  exit 1
+}
+[[ "$pr_head" == "$branch" ]] || {
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=current branch '${branch}' does not match PR head '${pr_head}'"
+  echo "STATUS=fail"
+  exit 1
+}
+[[ -n "$pr_base" ]] || {
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=PR base branch is empty"
+  echo "STATUS=fail"
+  exit 1
+}
+
+existing_target_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_target_pr_url")")"
+existing_supersedes_plan="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_supersedes_plan")")"
+existing_supersedes_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_supersedes_pr_url")")"
+branch_slug="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_branch_slug")")"
+take="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_take")")"
+existing_target_branch="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_target_branch")")"
+existing_start_branch="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_start_branch")")"
+existing_start_commit="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_start_commit")")"
+
+[[ -n "$branch_slug" ]] || branch_slug="$(derive_branch_slug_from_branch "$branch")"
+if ! [[ "$take" =~ ^[0-9]+$ ]] || [[ "$take" -le 0 ]]; then
+  take="$(derive_take_from_title "$pr_title")"
 fi
 
-commands+=("write $tracking_path")
-cat > "$tracking_path" <<EOF
-# PR Tracking: ${branch}
+if [[ -n "$existing_target_branch" && "$existing_target_branch" != "$pr_base" ]]; then
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=plan target branch '${existing_target_branch}' does not match PR base '${pr_base}'"
+  echo "STATUS=fail"
+  exit 1
+fi
+if [[ -n "$existing_start_branch" && "$existing_start_branch" != "$branch" ]]; then
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=plan start branch '${existing_start_branch}' does not match current branch '${branch}'"
+  echo "STATUS=fail"
+  exit 1
+fi
+if [[ -n "$existing_start_commit" ]]; then
+  creation_commit="$existing_start_commit"
+fi
 
-- PR link: ${pr_url}
-- PR creation date: ${creation_date}
-- branch name: ${branch}
-- commit hash at PR creation time: ${creation_commit}
-- summary/content of the PR: ${pr_title}
-- PR state: ${pr_state}
-- PR head/base: ${pr_head} -> ${pr_base}
-EOF
+metadata_block=$(cat <<EOF_META
+## ExecPlan Metadata
 
-if ! rg -q "$tracking_path_rel" "$PLAN"; then
-  commands+=("append PR Tracking Linkage to plan")
-  cat >> "$PLAN" <<EOF
-
-## PR Tracking Linkage
-
-- pr_tracking_doc: ${tracking_path_rel}
+${EXECPLAN_METADATA_START}
 - execplan_start_branch: ${branch}
+- execplan_target_branch: ${pr_base}
 - execplan_start_commit: ${creation_commit}
-EOF
-fi
+- execplan_pr_url: ${pr_url}
+- execplan_pr_title: ${pr_title}
+- execplan_branch_slug: ${branch_slug}
+- execplan_take: ${take}
+EOF_META
+)
 
-if ! rg -q "execplan_start_branch:" "$PLAN"; then
-  cat >> "$PLAN" <<EOF
-- execplan_start_branch: ${branch}
-EOF
+if [[ -n "$existing_target_pr_url" ]]; then
+  metadata_block+=$'\n'
+  metadata_block+="- execplan_target_pr_url: ${existing_target_pr_url}"
 fi
+if [[ -n "$existing_supersedes_plan" ]]; then
+  metadata_block+=$'\n'
+  metadata_block+="- execplan_supersedes_plan: ${existing_supersedes_plan}"
+fi
+if [[ -n "$existing_supersedes_pr_url" ]]; then
+  metadata_block+=$'\n'
+  metadata_block+="- execplan_supersedes_pr_url: ${existing_supersedes_pr_url}"
+fi
+metadata_block+=$'\n'
+metadata_block+="${EXECPLAN_METADATA_END}"
 
-if ! rg -q "execplan_start_commit:" "$PLAN"; then
-  cat >> "$PLAN" <<EOF
-- execplan_start_commit: ${creation_commit}
-EOF
-fi
+pr_body_block=$(cat <<EOF_BODY
+## ExecPlan PR Body
+
+${EXECPLAN_PR_BODY_START}
+${pr_body}
+${EXECPLAN_PR_BODY_END}
+EOF_BODY
+)
+
+commands+=("update execplan metadata block")
+replace_or_append_block "$PLAN" "$EXECPLAN_METADATA_START" "$EXECPLAN_METADATA_END" "$metadata_block"
+commands+=("update execplan PR body block")
+replace_or_append_block "$PLAN" "$EXECPLAN_PR_BODY_START" "$EXECPLAN_PR_BODY_END" "$pr_body_block"
 
 if ! rg -q "<!-- execplan-start-tracked:start -->" "$PLAN"; then
   commands+=("capture start tracked snapshot")
-  {
-    echo
-    echo "## ExecPlan Start Snapshot"
-    echo
-    echo "<!-- execplan-start-tracked:start -->"
+  cat >> "$PLAN" <<EOF_TRACKED
 
-    snapshot_count=0
-    while IFS= read -r path; do
-      [[ -z "$path" ]] && continue
-      hash="(deleted)"
-      if [[ -e "$path" ]]; then
-        hash="$(git hash-object -- "$path" 2>/dev/null || echo "(missing)")"
-      fi
-      printf -- "- start_tracked_change: %s\t%s\n" "$hash" "$path"
-      snapshot_count=$((snapshot_count + 1))
-    done < <(git diff --name-only HEAD -- | sort)
+## ExecPlan Start Snapshot
 
-    if [[ "$snapshot_count" -eq 0 ]]; then
-      echo "- start_tracked_change: (none)	(none)"
+<!-- execplan-start-tracked:start -->
+EOF_TRACKED
+
+  snapshot_count=0
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    hash="(deleted)"
+    if [[ -e "$path" ]]; then
+      hash="$(git hash-object -- "$path" 2>/dev/null || echo "(missing)")"
     fi
+    printf -- "- start_tracked_change: %s\t%s\n" "$hash" "$path" >> "$PLAN"
+    snapshot_count=$((snapshot_count + 1))
+  done < <(git diff --name-only HEAD -- | sort)
 
-    echo "<!-- execplan-start-tracked:end -->"
-  } >> "$PLAN"
+  if [[ "$snapshot_count" -eq 0 ]]; then
+    echo "- start_tracked_change: (none)	(none)" >> "$PLAN"
+  fi
+
+  echo "<!-- execplan-start-tracked:end -->" >> "$PLAN"
 fi
 
 if ! rg -q "<!-- execplan-start-untracked:start -->" "$PLAN"; then
   commands+=("capture start untracked snapshot")
-  {
-    echo
-    echo "<!-- execplan-start-untracked:start -->"
+  cat >> "$PLAN" <<EOF_UNTRACKED
 
-    snapshot_count=0
-    while IFS= read -r path; do
-      [[ -z "$path" ]] && continue
-      hash="$(git hash-object -- "$path" 2>/dev/null || echo "(missing)")"
-      printf -- "- start_untracked_file: %s\t%s\n" "$hash" "$path"
-      snapshot_count=$((snapshot_count + 1))
-    done < <(git ls-files --others --exclude-standard | sort)
+<!-- execplan-start-untracked:start -->
+EOF_UNTRACKED
 
-    if [[ "$snapshot_count" -eq 0 ]]; then
-      echo "- start_untracked_file: (none)	(none)"
-    fi
+  snapshot_count=0
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    hash="$(git hash-object -- "$path" 2>/dev/null || echo "(missing)")"
+    printf -- "- start_untracked_file: %s\t%s\n" "$hash" "$path" >> "$PLAN"
+    snapshot_count=$((snapshot_count + 1))
+  done < <(git ls-files --others --exclude-standard | sort)
 
-    echo "<!-- execplan-start-untracked:end -->"
-  } >> "$PLAN"
+  if [[ "$snapshot_count" -eq 0 ]]; then
+    echo "- start_untracked_file: (none)	(none)" >> "$PLAN"
+  fi
+
+  echo "<!-- execplan-start-untracked:end -->" >> "$PLAN"
 fi
 
 echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"

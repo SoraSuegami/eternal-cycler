@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# execplan.resume — run when resuming an existing plan.
-# Validates that the current branch matches the plan's start branch,
-# refreshes the PR tracking doc, and appends a resume record to the plan.
-# Branch management is the caller's responsibility.
-
 PLAN=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -32,83 +27,142 @@ if [[ -z "$PLAN" || ! -f "$PLAN" ]]; then
 fi
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+ETERNAL_CYCLER_ROOT="${ETERNAL_CYCLER_ROOT:-}"
+if [[ -z "$ETERNAL_CYCLER_ROOT" ]]; then
+  echo "COMMANDS=none"
+  echo "FAILURE_SUMMARY=ETERNAL_CYCLER_ROOT is not set; run through execplan_gate.sh"
+  echo "STATUS=fail"
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$ETERNAL_CYCLER_ROOT/scripts/execplan_plan_metadata.sh"
 
 commands=()
 commands+=("git branch --show-current")
+commands+=("gh pr view --json url,title,body,state,headRefName,baseRefName")
 
 current_branch="$(git branch --show-current)"
+start_branch="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_start_branch")")"
+start_commit="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_start_commit")")"
+branch_slug="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_branch_slug")")"
+take="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_take")")"
+existing_target_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_target_pr_url")")"
+existing_supersedes_plan="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_supersedes_plan")")"
+existing_supersedes_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_supersedes_pr_url")")"
 
-# Validate branch matches plan's recorded start branch.
-start_branch="$(grep -m1 'execplan_start_branch:' "$PLAN" | sed 's/.*execplan_start_branch:[[:space:]]*//' | tr -d '[:space:]' || true)"
 if [[ -z "$start_branch" ]]; then
   echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
   echo "FAILURE_SUMMARY=execplan_start_branch not found in plan; was execplan.post_creation run?"
   echo "STATUS=fail"
   exit 1
 fi
-
 if [[ "$current_branch" != "$start_branch" ]]; then
   echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
-  echo "FAILURE_SUMMARY=current branch '${current_branch}' does not match plan start branch '${start_branch}'; switch to '${start_branch}' before resuming"
+  echo "FAILURE_SUMMARY=current branch '${current_branch}' does not match plan start branch '${start_branch}'"
   echo "STATUS=fail"
   exit 1
 fi
 
-# Refresh PR tracking doc.
-gh_available=0
-if command -v gh >/dev/null 2>&1; then
-  gh_available=1
-  commands+=("gh pr view --json number,title,body,state,headRefName,baseRefName,url")
-  set +e
-  gh pr view --json number,title,body,state,headRefName,baseRefName,url >/dev/null 2>&1
-  set -e
+pr_json="$(gh pr view --json url,title,body,state,headRefName,baseRefName 2>/dev/null || true)"
+if [[ -z "$pr_json" ]]; then
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=failed to resolve the existing PR for the current branch"
+  echo "STATUS=fail"
+  exit 1
 fi
 
-tracking_path="${EXECPLAN_PR_TRACKING_PATH:-${REPO_ROOT}/eternal-cycler-out/prs/active/pr_${current_branch//\//_}.md}"
+pr_url="$(jq -r '.url // empty' <<< "$pr_json")"
+pr_title="$(jq -r '.title // empty' <<< "$pr_json")"
+pr_body="$(jq -r '.body // empty' <<< "$pr_json")"
+pr_state="$(jq -r '.state // empty' <<< "$pr_json")"
+pr_head="$(jq -r '.headRefName // empty' <<< "$pr_json")"
+pr_base="$(jq -r '.baseRefName // empty' <<< "$pr_json")"
+
+[[ -n "$pr_url" ]] || {
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=current branch PR URL is empty"
+  echo "STATUS=fail"
+  exit 1
+}
+[[ "$pr_state" == "OPEN" ]] || {
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=resume requires an OPEN PR; current state is '${pr_state}'"
+  echo "STATUS=fail"
+  exit 1
+}
+[[ "$pr_head" == "$current_branch" ]] || {
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=current branch '${current_branch}' does not match PR head '${pr_head}'"
+  echo "STATUS=fail"
+  exit 1
+}
+[[ -n "$pr_base" ]] || {
+  echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
+  echo "FAILURE_SUMMARY=PR base branch is empty"
+  echo "STATUS=fail"
+  exit 1
+}
+
+[[ -n "$branch_slug" ]] || branch_slug="$(derive_branch_slug_from_branch "$current_branch")"
+if ! [[ "$take" =~ ^[0-9]+$ ]] || [[ "$take" -le 0 ]]; then
+  take="$(derive_take_from_title "$pr_title")"
+fi
+
+metadata_block=$(cat <<EOF_META
+## ExecPlan Metadata
+
+${EXECPLAN_METADATA_START}
+- execplan_start_branch: ${start_branch}
+- execplan_target_branch: ${pr_base}
+- execplan_start_commit: ${start_commit}
+- execplan_pr_url: ${pr_url}
+- execplan_pr_title: ${pr_title}
+- execplan_branch_slug: ${branch_slug}
+- execplan_take: ${take}
+EOF_META
+)
+if [[ -n "$existing_target_pr_url" ]]; then
+  metadata_block+=$'\n'
+  metadata_block+="- execplan_target_pr_url: ${existing_target_pr_url}"
+fi
+if [[ -n "$existing_supersedes_plan" ]]; then
+  metadata_block+=$'\n'
+  metadata_block+="- execplan_supersedes_plan: ${existing_supersedes_plan}"
+fi
+if [[ -n "$existing_supersedes_pr_url" ]]; then
+  metadata_block+=$'\n'
+  metadata_block+="- execplan_supersedes_pr_url: ${existing_supersedes_pr_url}"
+fi
+metadata_block+=$'\n'
+metadata_block+="${EXECPLAN_METADATA_END}"
+
+pr_body_block=$(cat <<EOF_BODY
+## ExecPlan PR Body
+
+${EXECPLAN_PR_BODY_START}
+${pr_body}
+${EXECPLAN_PR_BODY_END}
+EOF_BODY
+)
+
+commands+=("update execplan metadata block")
+replace_or_append_block "$PLAN" "$EXECPLAN_METADATA_START" "$EXECPLAN_METADATA_END" "$metadata_block"
+commands+=("update execplan PR body block")
+replace_or_append_block "$PLAN" "$EXECPLAN_PR_BODY_START" "$EXECPLAN_PR_BODY_END" "$pr_body_block"
+
 resume_date="$(date -u +"%Y-%m-%d %H:%MZ")"
 resume_commit="$(git rev-parse HEAD)"
-
-pr_url="${EXECPLAN_MANUAL_PR_URL:-"(not available locally)"}"
-pr_title="(not available locally)"
-pr_state="unknown"
-pr_head="$current_branch"
-pr_base="(unknown)"
-
-if [[ "$gh_available" -eq 1 ]]; then
-  pr_url="$(gh pr view --json url --jq '.url' 2>/dev/null || echo "(not available locally)")"
-  pr_title="$(gh pr view --json title --jq '.title' 2>/dev/null || echo "(not available locally)")"
-  pr_state="$(gh pr view --json state --jq '.state' 2>/dev/null || echo "unknown")"
-  pr_head="$(gh pr view --json headRefName --jq '.headRefName' 2>/dev/null || echo "$current_branch")"
-  pr_base="$(gh pr view --json baseRefName --jq '.baseRefName' 2>/dev/null || echo "(unknown)")"
-fi
-
-if [[ -f "$tracking_path" ]]; then
-  commands+=("update $tracking_path")
-  cat > "$tracking_path" <<EOF
-# PR Tracking: ${current_branch}
-
-- PR link: ${pr_url}
-- PR creation date: (see original)
-- branch name: ${current_branch}
-- commit hash at PR creation time: (see original)
-- summary/content of the PR: ${pr_title}
-- PR state: ${pr_state}
-- PR head/base: ${pr_head} -> ${pr_base}
-- last resumed: ${resume_date}
-EOF
-fi
-
-# Append resume record to plan (idempotent: skip if this resume_commit already recorded).
 if ! rg -q "resume_commit: ${resume_commit}" "$PLAN"; then
   commands+=("append resume record to plan")
-  cat >> "$PLAN" <<EOF
+  cat >> "$PLAN" <<EOF_RESUME
 
 ## ExecPlan Resume Record
 
 - resume_date: ${resume_date}
 - resume_commit: ${resume_commit}
 - operator_feedback: (none)
-EOF
+EOF_RESUME
 fi
 
 echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"

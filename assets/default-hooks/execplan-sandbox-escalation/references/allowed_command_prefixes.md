@@ -12,19 +12,22 @@ Path note: prefixes beginning with `scripts/` are relative to the eternal-cycler
 
 - `git status --short`
 - `git branch --show-current`
+- `git switch`
+- `git switch -c`
+- `git pull --ff-only`
 - `git add -A`
 - `git commit -m`
 - `git push`
+- `gh pr list`
 - `gh pr view`
 - `gh pr checks`
 - `gh pr comment`
+- `gh pr close`
 - `gh pr create`
 - `gh pr ready`
 - `gh pr status`
 - `gh pr edit`
 - `gh api graphql`
-- `mv eternal-cycler-out/prs/active/`
-- `mkdir -p eternal-cycler-out/prs/active`
 - `scripts/execplan_gate.sh --event execplan.pre_creation`
 - `scripts/execplan_gate.sh --plan`
 - `scripts/run_builder_reviewer_doctor.sh`

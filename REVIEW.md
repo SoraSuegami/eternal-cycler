@@ -36,15 +36,15 @@ If all checks pass, the returned payload must explicitly state that outcome and 
 
 ## Verification sources
 
-**Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Hook and PR tracking paths are relative to the consuming repository root.
+**Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Hook and plan paths are relative to the consuming repository root.
 
 Use repository-local hooks under `.agents/skills/execplan-hook-*/`. Resolve the hook directory from the event ID by taking the portion after the first `.`, replacing `_` and `.` with `-`, and prefixing `execplan-hook-`. Use the gate script under `scripts/` to decide concrete commands and checks.
 
 ## Review cycle
 
-A user may identify a PR by URL, title, a file under `eternal-cycler-out/prs/`, or a deictic reference such as "this PR".
+A user may identify a PR by URL, title, the latest ExecPlan changed by the PR, or a deictic reference such as "this PR".
 
-1. Identify the intended PR using reliable signals (`gh pr` queries, repository PR tracking docs).
+1. Identify the intended PR using reliable signals (`gh pr` queries and the PR metadata stored inside the relevant ExecPlan).
 2. Ask for clarification only when confidence in PR identification is very low (approximately 10%); avoid unnecessary confirmation requests.
 3. Execute all mandatory review checks above.
 4. Return exactly one JSON payload for the loop script to post.

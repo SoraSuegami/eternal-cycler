@@ -8,7 +8,7 @@ description: Hook for execplan.post_completion. Use after plan document finaliza
 This hook executes the "after main ExecPlan completion" workflow:
 
 - validate ledger completion prerequisites,
-- resolve linked PR tracking document from the plan and verify metadata,
+- validate the inline ExecPlan metadata and PR body blocks stored in the plan,
 - ensure no unresolved progress actions or unresolved latest hook events remain,
 - verify start snapshot markers are present in the plan,
 - do not run `git add`, `git commit`, or `git push` in this event,

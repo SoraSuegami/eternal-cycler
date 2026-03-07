@@ -31,13 +31,21 @@ if [[ "$PLAN" == /* ]]; then
   plan_is_abs=1
 fi
 
-# REPO_ROOT: root of the consuming git repository.
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
+ETERNAL_CYCLER_ROOT="${ETERNAL_CYCLER_ROOT:-}"
+if [[ -z "$ETERNAL_CYCLER_ROOT" ]]; then
+  echo "COMMANDS=none"
+  echo "FAILURE_SUMMARY=ETERNAL_CYCLER_ROOT is not set; run through execplan_gate.sh"
+  echo "STATUS=fail"
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$ETERNAL_CYCLER_ROOT/scripts/execplan_plan_metadata.sh"
 
 commands=()
-commands+=("rg -n eternal-cycler-out/prs/active/|eternal-cycler-out/prs/completed/ <plan>")
+commands+=("rg -n execplan_start_branch|execplan_target_branch|execplan_pr_url|execplan_pr_title|execplan_branch_slug|execplan_take <plan>")
 
-pr_doc_path=""
 rollback_plan_path=""
 
 emit_fail() {
@@ -74,7 +82,6 @@ rollback_to_active() {
       rollback_plan_path="$target_path"
     fi
   fi
-
 }
 
 fail_validation() {
@@ -135,11 +142,6 @@ has_unresolved_latest_nonpass_event() {
   '
 }
 
-extract_pr_link_from_tracking_doc() {
-  local tracking_doc="$1"
-  sed -n -E 's/^- PR link:[[:space:]]+(.+)$/\1/p' "$tracking_doc" | head -n1 | sed -E 's/[[:space:]]+$//'
-}
-
 if ! rg -q "event_id=execplan.post_creation;.*status=pass" "$PLAN" && \
    ! rg -q "event_id=execplan.resume;.*status=pass" "$PLAN"; then
   fail_validation "missing pass entry for execplan.post_creation or execplan.resume"
@@ -166,41 +168,23 @@ if ! awk '
   fail_validation "missing pass entry for non-lifecycle event"
 fi
 
-pr_doc_path="$(rg -o "eternal-cycler-out/prs/(active|completed)/[^ )\t]+\\.md" "$PLAN" | head -n1 || true)"
-if [[ -z "$pr_doc_path" ]]; then
-  fail_validation "missing PR tracking document linkage in plan"
-fi
-
-# Resolve to absolute path for file tests (plan may record repo-relative paths).
-[[ "$pr_doc_path" == /* ]] || pr_doc_path="${REPO_ROOT}/${pr_doc_path}"
-
-if [[ ! -f "$pr_doc_path" && "$pr_doc_path" == */eternal-cycler-out/prs/active/* ]]; then
-  fallback_path="${REPO_ROOT}/eternal-cycler-out/prs/completed/$(basename "$pr_doc_path")"
-  if [[ -f "$fallback_path" ]]; then
-    commands+=("fallback pr doc $pr_doc_path -> $fallback_path")
-    pr_doc_path="$fallback_path"
-  fi
-fi
-
-commands+=("open $pr_doc_path")
-
-if [[ ! -f "$pr_doc_path" ]]; then
-  fail_validation "referenced PR tracking document not found: $pr_doc_path"
-fi
-
-missing_fields=()
-for field in "PR link" "branch" "commit" "summary/content"; do
-  if ! rg -qi "$field" "$pr_doc_path"; then
-    missing_fields+=("$field")
+required_keys=(
+  execplan_start_branch
+  execplan_target_branch
+  execplan_start_commit
+  execplan_pr_url
+  execplan_pr_title
+  execplan_branch_slug
+  execplan_take
+)
+for key in "${required_keys[@]}"; do
+  if [[ -z "$(trim_line "$(read_plan_scalar "$PLAN" "$key")")" ]]; then
+    fail_validation "missing required plan metadata: ${key}"
   fi
 done
-if [[ ${#missing_fields[@]} -gt 0 ]]; then
-  fail_validation "PR tracking metadata incomplete; missing fields: $(IFS=','; echo "${missing_fields[*]}")"
-fi
 
-pr_url="$(extract_pr_link_from_tracking_doc "$pr_doc_path")"
-if [[ -z "$pr_url" || "$pr_url" == "(not available locally)" ]]; then
-  fail_validation "PR tracking metadata missing resolvable PR link"
+if ! rg -q -F "$EXECPLAN_PR_BODY_START" "$PLAN" || ! rg -q -F "$EXECPLAN_PR_BODY_END" "$PLAN"; then
+  fail_validation "missing ExecPlan PR body block in plan"
 fi
 
 if rg -q "^- \[ \]" "$PLAN"; then

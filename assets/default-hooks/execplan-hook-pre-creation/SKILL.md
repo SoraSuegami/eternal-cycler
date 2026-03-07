@@ -12,7 +12,7 @@ This hook executes a lightweight environment check before the ExecPlan document 
 
 This event takes **no arguments** — `--plan` is not accepted because the plan file does not exist yet. Branch management is the caller's responsibility.
 
-After creating the plan document, run `execplan.post_creation` (which requires `--plan`) to record the start snapshot and PR tracking linkage.
+After creating the plan document, run `execplan.post_creation` (which requires `--plan`) to record the start snapshot and inline ExecPlan metadata.
 
 Execution policy:
 

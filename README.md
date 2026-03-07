@@ -1,24 +1,24 @@
 # eternal-cycler
 
-An autonomous PR builder/reviewer loop for [Codex](https://github.com/openai/codex) agents. Install it as a git subtree in your repository to get:
+An autonomous builder/reviewer loop for [Codex](https://github.com/openai/codex) agents. Install it as a git subtree in your repository to get:
 
-- An autonomous agent loop that writes code, opens PRs, reviews them, and iterates until the reviewer approves
-- An ExecPlan lifecycle system that enforces structured planning, verification gates, and escalation bounds
-- An ExecPlan hook framework for repo-specific pre/post-action checks
+- an autonomous agent loop that writes code, opens or reuses draft PRs, reviews them, and iterates until the reviewer approves
+- an ExecPlan lifecycle system with verification gates and escalation bounds
+- inline ExecPlan metadata that stores branch / target branch / PR information directly in each plan document
 
 ## Directory layout after installation
 
-```
+```text
 your-repo/
 ├── .agents/
 │   └── skills/
-│       ├── eternal-cycler/          # static — the skill itself (this repo)
+│       ├── eternal-cycler/
 │       │   ├── SKILL.md
 │       │   ├── PLANS.md
 │       │   ├── REVIEW.md
 │       │   ├── setup.sh
 │       │   ├── scripts/
-│       │   └── assets/default-hooks/          # default hook templates
+│       │   └── assets/default-hooks/
 │       ├── execplan-hook-pre-creation/
 │       ├── execplan-hook-post-creation/
 │       ├── execplan-hook-resume/
@@ -26,17 +26,14 @@ your-repo/
 │       ├── execplan-hook-docs-only/
 │       ├── execplan-hook-tooling/
 │       └── execplan-sandbox-escalation/
-└── eternal-cycler-out/              # created by setup.sh — all dynamic agent output
-    ├── plans/
-    │   ├── active/
-    │   ├── completed/
-    │   └── tech-debt/
-    └── prs/
+└── eternal-cycler-out/
+    └── plans/
         ├── active/
-        └── completed/
+        ├── completed/
+        └── tech-debt/
 ```
 
-The skill directory (`.agents/skills/eternal-cycler/`) is static and never written to by agents at runtime. All dynamic output goes to `eternal-cycler-out/`.
+The skill directory (`.agents/skills/eternal-cycler/`) is static and never written to at runtime. Dynamic output goes only to `eternal-cycler-out/plans/`.
 
 ## Prerequisites
 
@@ -44,9 +41,9 @@ The skill directory (`.agents/skills/eternal-cycler/`) is static and never writt
 |------|---------|
 | `git` | version control |
 | `gh` | GitHub CLI for PR operations |
-| `codex` | OpenAI Codex CLI (the agent runner) |
+| `codex` | OpenAI Codex CLI |
 | `jq` | JSON parsing in loop scripts |
-| `rg` | ripgrep for fast file search |
+| `rg` | fast search in scripts and plans |
 
 ## Installation
 
@@ -60,46 +57,19 @@ git subtree add \
   --squash
 ```
 
-Then run setup to copy the default hooks and create the output directories:
+Then run setup:
 
 ```bash
 bash .agents/skills/eternal-cycler/setup.sh
 ```
 
-Setup output:
+Setup output now creates only the plan directories:
 
-```
-[setup] eternal-cycler path: .agents/skills/eternal-cycler/
-[setup] git repo root:       /path/to/your-repo/
-
-[setup] OK  git found
-[setup] OK  gh found
-[setup] OK  codex found
-[setup] OK  jq found
-[setup] OK  rg found
-
-[setup] Copying default ExecPlan hooks to /path/to/your-repo/.agents/skills/
-[setup] OK   copied execplan-hook-pre-creation -> .agents/skills/execplan-hook-pre-creation
-[setup] OK   copied execplan-hook-post-creation -> .agents/skills/execplan-hook-post-creation
-[setup] OK   copied execplan-hook-resume -> .agents/skills/execplan-hook-resume
-[setup] OK   copied execplan-hook-post-completion -> .agents/skills/execplan-hook-post-completion
-[setup] OK   copied execplan-hook-docs-only -> .agents/skills/execplan-hook-docs-only
-[setup] OK   copied execplan-hook-tooling -> .agents/skills/execplan-hook-tooling
-[setup] OK   copied execplan-sandbox-escalation -> .agents/skills/execplan-sandbox-escalation
-
+```text
 [setup] Creating eternal-cycler-out/ output directories under /path/to/your-repo/
 [setup] OK   eternal-cycler-out/plans/active
 [setup] OK   eternal-cycler-out/plans/completed
 [setup] OK   eternal-cycler-out/plans/tech-debt
-[setup] OK   eternal-cycler-out/prs/active
-[setup] OK   eternal-cycler-out/prs/completed
-
-[setup] Setup complete.
-[setup] Skill directory:  /path/to/your-repo/.agents/skills/
-[setup] Output directory: /path/to/your-repo/eternal-cycler-out/
-[setup] To start the builder/reviewer loop:
-[setup]   .agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
-[setup]     --task 'describe the task here'
 ```
 
 Commit the result:
@@ -109,25 +79,60 @@ git add .agents/ eternal-cycler-out/
 git commit -m "chore: install eternal-cycler"
 ```
 
+## Runtime model
+
+Each ExecPlan stores its own runtime metadata in the plan file:
+
+- `execplan_start_branch`
+- `execplan_target_branch`
+- `execplan_start_commit`
+- `execplan_pr_url`
+- `execplan_pr_title`
+- `execplan_branch_slug`
+- `execplan_take`
+- optional `execplan_target_pr_url`
+- optional `execplan_supersedes_plan`
+- optional `execplan_supersedes_pr_url`
+
+The current PR body is stored in the plan between:
+
+- `<!-- execplan-pr-body:start -->`
+- `<!-- execplan-pr-body:end -->`
+
 ## Usage
 
-The skill is invoked as a Codex skill. When running Codex in your repository with `.agents/skills/eternal-cycler/SKILL.md` in scope, the agent will run the builder/reviewer loop automatically.
+The preferred entrypoint is the skill in `SKILL.md`, which handles:
 
-You can also invoke the loop directly:
+- target branch resolution from `target-branch` or `target-pr-url`
+- active plan selection
+- branch switching and pulling
+- direct loop invocation with the required PR title/body inputs
+
+You can also invoke the loop directly after preparing the branch yourself.
+
+New take:
 
 ```bash
-# New task (run from a feature branch; the loop uses the current branch)
-git switch -c feat/my-task
+git switch main
+git pull --ff-only origin main
+git switch -c login-validation-20260307-1430
 .agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
-  --task "add input validation to the login form"
-
-# Resume an existing PR
-.agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
-  --task-file task.md \
-  --pr-url https://github.com/your-org/your-repo/pull/42
+  --task "add input validation to the login form" \
+  --target-branch main \
+  --pr-title "feat: add login form input validation" \
+  --pr-body "## Summary\n- validate login form input before submit\n- add regression coverage"
 ```
 
-See `SKILL.md` for the full invocation contract that the Codex agent follows.
+Resume an existing plan/PR:
+
+```bash
+.agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
+  --task-file task.md \
+  --target-branch main \
+  --pr-title "feat: add login form input validation" \
+  --pr-body "$(sed -n '/<!-- execplan-pr-body:start -->/,/<!-- execplan-pr-body:end -->/p' eternal-cycler-out/plans/active/plan.md | sed '1d;$d')" \
+  --pr-url https://github.com/your-org/your-repo/pull/42
+```
 
 ## Updating
 
@@ -141,32 +146,28 @@ git subtree pull \
   --squash
 ```
 
-Re-run setup after updating to pick up any new default hooks:
+Re-run setup after updating so the default hooks and allowlist stay in sync:
 
 ```bash
 bash .agents/skills/eternal-cycler/setup.sh
 ```
 
-Existing hook directories in `.agents/skills/` are overwritten so that updates from eternal-cycler are always applied.
-
 ## Adding custom hooks
 
-The gate script resolves hook scripts from `.agents/skills/` in your repository. To add a new hook for a `hook_events` entry:
+The gate script resolves hook scripts from `.agents/skills/` in your repository.
 
-1. Pick an event ID, for example `hook.your_event`.
-   Legacy `action.*` event IDs are rejected.
+1. Pick an event ID such as `hook.your_event`.
 2. Derive the hook directory name from the portion after the first `.` by replacing `_` and `.` with `-`.
-   `hook.your_event` becomes `.agents/skills/execplan-hook-your-event/`.
-3. Create that directory with a `scripts/run_event.sh` that outputs `STATUS=pass` or `STATUS=fail`.
-4. When authoring an ExecPlan `Progress` action, search the installed skill index for `execplan-hook-*` hooks and write the corresponding event ID into `hook_events`.
+3. Create `.agents/skills/execplan-hook-your-event/` with a `scripts/run_event.sh` that emits `STATUS=pass` or `STATUS=fail`.
+4. Reference that event ID in an ExecPlan `Progress` action’s `hook_events`.
 
-See `assets/default-hooks/execplan-hook-tooling/` for an example hook.
+See `assets/default-hooks/execplan-hook-tooling/` for an example.
 
 ## Key documents
 
 | File | Purpose |
 |------|---------|
 | `PLANS.md` | ExecPlan authoring and lifecycle policy |
-| `REVIEW.md` | PR review policy |
-| `SKILL.md` | Codex skill contract for the builder/reviewer loop |
-| `.agents/skills/execplan-sandbox-escalation/references/allowed_command_prefixes.md` | Approved out-of-sandbox command prefixes |
+| `REVIEW.md` | reviewer policy |
+| `SKILL.md` | skill contract for the builder/reviewer loop |
+| `assets/default-hooks/execplan-sandbox-escalation/references/allowed_command_prefixes.md` | approved out-of-sandbox command prefixes |

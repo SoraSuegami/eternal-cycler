@@ -8,7 +8,7 @@ description: Hook for execplan.resume. Run when resuming an existing ExecPlan to
 This hook executes the "resume existing plan" workflow:
 
 - read `execplan_start_branch` from the plan and verify that the current branch matches,
-- refresh the PR tracking document at `eternal-cycler-out/prs/active/pr_<branch>.md`,
+- refresh the inline `execplan-metadata` and `execplan-pr-body` blocks from the existing PR,
 - append an `## ExecPlan Resume Record` section to the plan (idempotent per resume commit).
 
 Requires `--plan`. Branch management is the caller's responsibility.
