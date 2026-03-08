@@ -53,7 +53,7 @@ existing_supersedes_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_su
 
 if [[ -z "$start_branch" ]]; then
   echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
-  echo "FAILURE_SUMMARY=execplan_start_branch not found in plan; was execplan.post_creation run?"
+  echo "FAILURE_SUMMARY=execplan_start_branch not found in plan; was execplan.post-creation run?"
   echo "STATUS=fail"
   exit 1
 fi

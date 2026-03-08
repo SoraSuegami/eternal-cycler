@@ -38,7 +38,7 @@ mapfile -t paths < <({
 
 for path in "${paths[@]}"; do
   case "$path" in
-    eternal-cycler-out/*|*.md|PLANS.md|REVIEW.md)
+    eternal-cycler-out/*|*.md|*.rules|PLANS.md|REVIEW.md|.codex/rules/*)
       ;;
     *)
       echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"

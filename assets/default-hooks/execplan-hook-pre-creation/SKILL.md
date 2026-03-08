@@ -1,9 +1,9 @@
 ---
 name: execplan-hook-pre-creation
-description: Hook for execplan.pre_creation. Lightweight environment check before the ExecPlan document is created, plus creation of the branch-named empty plan file.
+description: Hook for execplan.pre-creation. Lightweight environment check before the ExecPlan document is created, plus creation of the branch-named empty plan file.
 ---
 
-# Hook: execplan.pre_creation
+# Hook: execplan.pre-creation
 
 This hook executes a lightweight environment check before the ExecPlan document is created:
 
@@ -16,12 +16,12 @@ This hook executes a lightweight environment check before the ExecPlan document 
 
 This event takes **no arguments** — `--plan` is not accepted because the plan file does not exist yet. Branch management is the caller's responsibility.
 
-After creating the plan document, run `execplan.post_creation` (which requires `--plan`) to record the start snapshot and inline ExecPlan metadata.
+After creating the plan document, run `execplan.post-creation` (which requires `--plan`) to record the start snapshot and inline ExecPlan metadata.
 
 Execution policy:
 
 - This event must be executed out-of-sandbox.
-- Run through gate as: `scripts/execplan_gate.sh --event execplan.pre_creation` (no `--plan`).
+- Run through gate as: `scripts/execplan_gate.sh --event execplan.pre-creation` (no `--plan`).
 
 ## Script
 

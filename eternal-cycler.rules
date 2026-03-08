@@ -59,7 +59,7 @@
 #
 # Policy summary from the audited docs:
 # - Any gh command family operation should prefer outside-sandbox execution.
-# - execplan.pre_creation and execplan.post_completion are mandatory outside-sandbox gates.
+# - execplan.pre-creation and execplan.post-completion are mandatory outside-sandbox gates.
 # - The PLANS lifecycle docs mark manual lifecycle gate invocations as outside-sandbox.
 
 prefix_rule(
@@ -86,9 +86,9 @@ prefix_rule(
     decision = "allow",
     justification = "Audited lifecycle and hook gate entrypoint. The lifecycle hook docs require these gates outside sandbox.",
     match = [
-        "scripts/execplan_gate.sh --event execplan.pre_creation",
-        "scripts/execplan_gate.sh --plan eternal-cycler-out/plans/active/feat-20260307-1430.md --event execplan.post_creation",
-        "scripts/execplan_gate.sh --plan eternal-cycler-out/plans/active/feat-20260307-1430.md --event execplan.post_completion",
+        "scripts/execplan_gate.sh --event execplan.pre-creation",
+        "scripts/execplan_gate.sh --plan eternal-cycler-out/plans/active/feat-20260307-1430.md --event execplan.post-creation",
+        "scripts/execplan_gate.sh --plan eternal-cycler-out/plans/active/feat-20260307-1430.md --event execplan.post-completion",
     ],
 )
 

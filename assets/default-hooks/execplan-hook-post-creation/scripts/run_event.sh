@@ -49,7 +49,7 @@ git status --short >/dev/null
 pr_json="$(gh pr view --json url,title,body,state,isDraft,headRefName,baseRefName 2>/dev/null || true)"
 if [[ -z "$pr_json" ]]; then
   echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
-  echo "FAILURE_SUMMARY=failed to resolve current branch PR metadata; create the draft PR before execplan.post_creation"
+  echo "FAILURE_SUMMARY=failed to resolve current branch PR metadata; create the draft PR before execplan.post-creation"
   echo "STATUS=fail"
   exit 1
 fi
@@ -76,7 +76,7 @@ creation_commit="$(git rev-parse HEAD)"
 }
 [[ "$pr_is_draft" == "true" ]] || {
   echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
-  echo "FAILURE_SUMMARY=current branch PR must be a draft PR before execplan.post_creation"
+  echo "FAILURE_SUMMARY=current branch PR must be a draft PR before execplan.post-creation"
   echo "STATUS=fail"
   exit 1
 }

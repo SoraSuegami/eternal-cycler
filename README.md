@@ -90,7 +90,7 @@ git commit -m "chore: install eternal-cycler"
 
 ## Runtime model
 
-Each ExecPlan stores its own runtime metadata in the plan file:
+Each ExecPlan caches its own runtime metadata in the plan file:
 
 - `execplan_start_branch`
 - `execplan_target_branch`
@@ -103,10 +103,12 @@ Each ExecPlan stores its own runtime metadata in the plan file:
 - optional `execplan_supersedes_plan`
 - optional `execplan_supersedes_pr_url`
 
-The current PR body is stored in the plan between:
+The current PR body is cached in the plan between:
 
 - `<!-- execplan-pr-body:start -->`
 - `<!-- execplan-pr-body:end -->`
+
+The remote GitHub PR is authoritative for PR URL, title, body, and head/base state. The plan is authoritative for ExecPlan-local state such as actions, Hook Ledger entries, snapshots, resume records, supersede/failure records, and retrospectives.
 
 ## Usage
 
@@ -114,18 +116,14 @@ The preferred entrypoint is the skill in `SKILL.md`, which handles:
 
 - target branch resolution from `target-branch` or `target-pr-url`
 - active plan selection
-- branch switching and pulling
-- direct loop invocation with the required PR title/body inputs
+- direct loop invocation
+- target-branch refresh before starting a new take or resuming a plan
 
-You can also invoke the loop directly after preparing the branch yourself.
+You can also invoke the loop directly.
 
 New take:
 
 ```bash
-git switch main
-git pull --ff-only origin main
-git switch -c login-validation-20260307-1430
-# Read .codex/rules/eternal-cycler.rules before any manual out-of-sandbox gate/command.
 .agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
   --task "add input validation to the login form" \
   --target-branch main \
@@ -137,14 +135,9 @@ Resume an existing plan/PR:
 
 ```bash
 PLAN=eternal-cycler-out/plans/active/login-validation-20260307-1430.md
-# Read .codex/rules/eternal-cycler.rules before this manual out-of-sandbox gate.
-.agents/skills/eternal-cycler/scripts/execplan_gate.sh --plan "$PLAN" --event execplan.resume
 .agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
-  --task-file task.md \
-  --target-branch main \
-  --pr-title "feat: add login form input validation" \
-  --pr-body "$(sed -n '/<!-- execplan-pr-body:start -->/,/<!-- execplan-pr-body:end -->/p' "$PLAN" | sed '1d;$d')" \
-  --pr-url https://github.com/your-org/your-repo/pull/42
+  --resume-plan "$PLAN" \
+  --task-file task.md
 ```
 
 ## Updating
@@ -169,8 +162,8 @@ bash .agents/skills/eternal-cycler/setup.sh
 
 The gate script resolves hook scripts from `.agents/skills/` in your repository.
 
-1. Pick an event ID such as `hook.your_event`.
-2. Derive the hook directory name from the portion after the first `.` by replacing `_` and `.` with `-`.
+1. Pick an event ID such as `hook.your-event`.
+2. Derive the hook directory name from the portion after the first `.` by replacing `.` with `-`. Use dash-form event IDs only; underscore aliases are not supported.
 3. Create `.agents/skills/execplan-hook-your-event/` with a `scripts/run_event.sh` that emits `STATUS=pass` or `STATUS=fail`.
 4. Reference that event ID in an ExecPlan `Progress` action’s `hook_events`.
 

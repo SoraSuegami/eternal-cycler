@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# execplan.pre_creation — lightweight environment check run before the plan file exists.
+# execplan.pre-creation — lightweight environment check run before the plan file exists.
 # --plan is not accepted; branch management is the caller's responsibility.
 # Records git state, seeds the branch-named plan file, and returns pass.
-# Follow with execplan.post_creation after writing the plan.
+# Follow with execplan.post-creation after writing the plan.
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -50,7 +50,7 @@ fi
 git status --short >/dev/null
 if ! git diff --quiet -- || ! git diff --cached --quiet -- || [[ -n "$(git ls-files -u)" ]]; then
   echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"
-  echo "FAILURE_SUMMARY=tracked working tree must be clean before execplan.pre_creation"
+  echo "FAILURE_SUMMARY=tracked working tree must be clean before execplan.pre-creation"
   echo "STATUS=fail"
   exit 1
 fi

@@ -92,7 +92,7 @@ has_unresolved_latest_nonpass_event() {
     }
     END {
       for (e in latest) {
-        if (e == "execplan.post_completion") {
+        if (e == "execplan.post-completion") {
           continue
         }
         if (latest[e] == "fail" || latest[e] == "escalated") {
@@ -107,12 +107,12 @@ has_unresolved_latest_nonpass_event() {
 
 plan_rel="$(repo_rel_path "$REPO_ROOT" "$PLAN")"
 if [[ "$plan_rel" != eternal-cycler-out/plans/active/* ]]; then
-  fail_validation "execplan.post_completion requires an active plan path; got ${plan_rel}"
+  fail_validation "execplan.post-completion requires an active plan path; got ${plan_rel}"
 fi
 
-if ! rg -q "event_id=execplan.post_creation;.*status=pass" "$PLAN" && \
+if ! rg -q "event_id=execplan.post-creation;.*status=pass" "$PLAN" && \
    ! rg -q "event_id=execplan.resume;.*status=pass" "$PLAN"; then
-  fail_validation "missing pass entry for execplan.post_creation or execplan.resume"
+  fail_validation "missing pass entry for execplan.post-creation or execplan.resume"
 fi
 
 required_keys=(
@@ -146,10 +146,10 @@ commands+=("git status --short")
 git status --short >/dev/null
 
 if ! rg -q "<!-- execplan-start-untracked:start -->" "$PLAN"; then
-  fail_validation "missing execplan start untracked snapshot in plan; run execplan.post_creation and retry"
+  fail_validation "missing execplan start untracked snapshot in plan; run execplan.post-creation and retry"
 fi
 if ! rg -q "<!-- execplan-start-tracked:start -->" "$PLAN"; then
-  fail_validation "missing execplan start tracked snapshot in plan; run execplan.post_creation and retry"
+  fail_validation "missing execplan start tracked snapshot in plan; run execplan.post-creation and retry"
 fi
 
 echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"

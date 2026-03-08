@@ -2,10 +2,10 @@
 set -euo pipefail
 
 MAX_ATTEMPTS=3
-PRE_CREATION_EVENT_ID="execplan.pre_creation"
-POST_CREATION_EVENT_ID="execplan.post_creation"
+PRE_CREATION_EVENT_ID="execplan.pre-creation"
+POST_CREATION_EVENT_ID="execplan.post-creation"
 RESUME_EVENT_ID="execplan.resume"
-POST_EVENT_ID="execplan.post_completion"
+POST_EVENT_ID="execplan.post-completion"
 
 usage() {
   cat <<'USAGE'
@@ -13,7 +13,7 @@ Usage:
   execplan_gate.sh --event <event_id> [--plan <plan_md>] [--attempt <n>]
 
 Notes:
-  --plan is not accepted by execplan.pre_creation (no plan file exists yet).
+  --plan is not accepted by execplan.pre-creation (no plan file exists yet).
   All other events require --plan.
 USAGE
 }
@@ -107,9 +107,17 @@ event_to_hook_suffix() {
   case "$event_id" in
     execplan.*)
       suffix="${event_id#execplan.}"
+      if [[ "$suffix" == *_* ]]; then
+        echo "Underscore event IDs are not supported; use dash-form event IDs instead: $event_id" >&2
+        return 1
+      fi
       ;;
     hook.*)
       suffix="${event_id#hook.}"
+      if [[ "$suffix" == *_* ]]; then
+        echo "Underscore event IDs are not supported; use dash-form event IDs instead: $event_id" >&2
+        return 1
+      fi
       ;;
     action.*)
       echo "Legacy action.* event IDs are not supported: $event_id (use hook.${event_id#action.})" >&2
@@ -121,7 +129,6 @@ event_to_hook_suffix() {
       ;;
   esac
 
-  suffix="${suffix//_/-}"
   suffix="${suffix//./-}"
   [[ -n "$suffix" ]] || return 1
   printf '%s\n' "$suffix"
@@ -199,6 +206,56 @@ force_close_failed_plan_if_needed() {
   PLAN="$(repo_rel_path "$REPO_ROOT" "$destination")"
 }
 
+append_note_to_markdown_section() {
+  local file="$1"
+  local heading="$2"
+  local note="$3"
+  local tmp
+
+  tmp="$(mktemp)"
+  awk -v heading="$heading" -v note="$note" '
+    BEGIN {
+      target = "## " heading
+    }
+    $0 == target {
+      found = 1
+      print
+      print ""
+      print note
+      inserted = 1
+      next
+    }
+    { print }
+    END {
+      if (!found) {
+        print ""
+        print target
+        print ""
+        print note
+      }
+    }
+  ' "$file" > "$tmp"
+  mv "$tmp" "$file"
+}
+
+record_escalation_in_plan() {
+  if [[ "$HAS_PLAN_FILE" -ne 1 || "$FINAL_STATUS" != "escalated" ]]; then
+    return 0
+  fi
+
+  local abs_path timestamp progress_note outcomes_note
+
+  abs_path="$(plan_abs_path "$REPO_ROOT" "$PLAN")"
+  [[ -f "$abs_path" ]] || return 0
+
+  timestamp="$(date -u +"%Y-%m-%d %H:%MZ")"
+  progress_note="- escalation_record: ${timestamp}; event=${EVENT}; attempt=${ATTEMPT}; summary=${FAILURE_SUMMARY}"
+  outcomes_note="- ${timestamp}: Event ${EVENT} escalated at attempt ${ATTEMPT}. Summary: ${FAILURE_SUMMARY}"
+
+  append_note_to_markdown_section "$abs_path" "Progress" "$progress_note"
+  append_note_to_markdown_section "$abs_path" "Outcomes & Retrospective" "$outcomes_note"
+}
+
 move_active_plan_to_completed_on_pass() {
   if [[ "$HAS_PLAN_FILE" -ne 1 || "$EVENT" != "$POST_EVENT_ID" || "$FINAL_STATUS" != "pass" ]]; then
     return 0
@@ -216,7 +273,7 @@ move_active_plan_to_completed_on_pass() {
   fi
 
   if [[ "$rel_path" != eternal-cycler-out/plans/active/* ]]; then
-    echo "execplan.post_completion requires an active plan path, got: $rel_path" >&2
+    echo "execplan.post-completion requires an active plan path, got: $rel_path" >&2
     exit 1
   fi
 
@@ -225,7 +282,7 @@ move_active_plan_to_completed_on_pass() {
     exit 1
   }
   if [[ -e "$destination" ]]; then
-    echo "completed destination already exists for execplan.post_completion: $destination" >&2
+    echo "completed destination already exists for execplan.post-completion: $destination" >&2
     exit 1
   fi
 
@@ -374,6 +431,10 @@ validate_progress_hook_fields() {
             if (ev == "" || ev == "none" || ev == "-") {
               continue
             }
+            if (ev ~ /_/) {
+              add_issue("hook_events must use dash-form event IDs: " ev)
+              continue
+            }
             if (ev !~ /^hook\./) {
               if (ev == pre || ev == post_creation || ev == resume || ev == post) {
                 add_issue("hook_events must not contain lifecycle event: " ev)
@@ -399,6 +460,43 @@ validate_progress_hook_fields() {
     return 1
   fi
 
+  printf '%s\n' "$issues" | paste -sd '|' - | sed 's/|/; /g'
+  return 0
+}
+
+find_incomplete_hook_event_actions() {
+  if [[ "$HAS_PLAN_FILE" -ne 1 ]]; then
+    return 1
+  fi
+
+  local issues
+  issues="$(
+    awk '
+      function trim(s) {
+        gsub(/^[[:space:]]+/, "", s)
+        gsub(/[[:space:]]+$/, "", s)
+        return s
+      }
+      /^[[:space:]]*-[[:space:]]*\[[[:space:]]\]/ && /hook_events=/ {
+        line=$0
+        sub(/^[[:space:]]*-[[:space:]]*\[[[:space:]]\][[:space:]]*/, "", line)
+        n=split(line, parts, ";")
+        for (i=1; i<=n; i++) {
+          if (parts[i] ~ /hook_events=/) {
+            field=parts[i]
+            gsub(/^.*hook_events=/, "", field)
+            field=trim(field)
+            if (field != "" && field != "none" && field != "-") {
+              print NR ":" trim(line)
+              break
+            }
+          }
+        }
+      }
+    ' "$PLAN"
+  )"
+
+  [[ -n "$issues" ]] || return 1
   printf '%s\n' "$issues" | paste -sd '|' - | sed 's/|/; /g'
   return 0
 }
@@ -496,117 +594,6 @@ missing_required_hook_event_passes() {
   return 1
 }
 
-find_parallel_file_lock_conflict() {
-  if [[ "$HAS_PLAN_FILE" -ne 1 ]]; then
-    return 1
-  fi
-  local conflict
-  conflict="$(
-    awk '
-      function trim(s) {
-        gsub(/^[[:space:]]+/, "", s)
-        gsub(/[[:space:]]+$/, "", s)
-        return s
-      }
-      function extract_field(line, key,    n, parts, i, value) {
-        n=split(line, parts, ";")
-        for (i=1; i<=n; i++) {
-          if (parts[i] ~ (key "=")) {
-            sub("^.*" key "=", "", parts[i])
-            value=trim(parts[i])
-            return value
-          }
-        }
-        return ""
-      }
-      function has_shared_lock(a, b,    n1, n2, i, j, lock1, lock2) {
-        n1=split(locks[a], arr1, ",")
-        n2=split(locks[b], arr2, ",")
-        for (i=1; i<=n1; i++) {
-          lock1=trim(arr1[i])
-          if (lock1 == "" || lock1 == "none" || lock1 == "-") {
-            continue
-          }
-          for (j=1; j<=n2; j++) {
-            lock2=trim(arr2[j])
-            if (lock2 == "" || lock2 == "none" || lock2 == "-") {
-              continue
-            }
-            if (lock1 == lock2) {
-              conflict_lock=lock1
-              return 1
-            }
-          }
-        }
-        return 0
-      }
-      function depends_rec(start, target,    n, dep_list, i, dep) {
-        if (start == "" || seen[start]) {
-          return 0
-        }
-        seen[start]=1
-        n=split(depends[start], dep_list, ",")
-        for (i=1; i<=n; i++) {
-          dep=trim(dep_list[i])
-          if (dep == "" || dep == "none" || dep == "-") {
-            continue
-          }
-          if (dep == target) {
-            return 1
-          }
-          if (depends_rec(dep, target)) {
-            return 1
-          }
-        }
-        return 0
-      }
-      function depends_on(start, target) {
-        delete seen
-        return depends_rec(start, target)
-      }
-      /action_id=/ {
-        action_id=extract_field($0, "action_id")
-        mode[action_id]=extract_field($0, "mode")
-        depends[action_id]=extract_field($0, "depends_on")
-        locks[action_id]=extract_field($0, "file_locks")
-        if (!(action_id in action_seen)) {
-          action_seen[action_id]=1
-          action_order[++action_count]=action_id
-        }
-      }
-      END {
-        for (i=1; i<=action_count; i++) {
-          a=action_order[i]
-          if (mode[a] != "parallel") {
-            continue
-          }
-          for (j=i+1; j<=action_count; j++) {
-            b=action_order[j]
-            if (mode[b] != "parallel") {
-              continue
-            }
-            if (!has_shared_lock(a, b)) {
-              continue
-            }
-            if (depends_on(a, b) || depends_on(b, a)) {
-              continue
-            }
-            printf "file_locks conflict: '\''%s'\'' shared by unordered parallel actions '\''%s'\'' and '\''%s'\''", conflict_lock, a, b
-            exit 0
-          }
-        }
-        exit 1
-      }
-    ' "$PLAN"
-  )" || true
-
-  if [[ -n "$conflict" ]]; then
-    echo "$conflict"
-    return 0
-  fi
-  return 1
-}
-
 append_ledger_entry() {
   if [[ "$HAS_PLAN_FILE" -ne 1 ]]; then
     return 0
@@ -644,11 +631,14 @@ append_ledger_entry() {
 
 require_mandatory_lifecycle_events
 if ! is_registered_event "$EVENT"; then
+  expected_hook_dir="$(event_to_hook_dir "$EVENT" 2>&1)" || {
+    echo "$expected_hook_dir" >&2
+    exit 2
+  }
   if [[ "$EVENT" == action.* ]]; then
     echo "Legacy action.* event IDs are not supported: $EVENT (use hook.${EVENT#action.})" >&2
     exit 2
   fi
-  expected_hook_dir="$(event_to_hook_dir "$EVENT" 2>/dev/null || echo "(invalid-event-id)")"
   echo "Unsupported event or missing hook: $EVENT (expected .agents/skills/${expected_hook_dir}/scripts/run_event.sh)" >&2
   exit 2
 fi
@@ -708,18 +698,18 @@ if [[ -z "$FINAL_STATUS" && "$EVENT" == "$POST_EVENT_ID" ]]; then
 fi
 
 if [[ -z "$FINAL_STATUS" && "$EVENT" == "$POST_EVENT_ID" ]]; then
+  if incomplete_hook_actions="$(find_incomplete_hook_event_actions)"; then
+    FINAL_STATUS="fail"
+    COMMANDS="gate prerequisite: hook_events action completion scan"
+    FAILURE_SUMMARY="hook_events actions must be checked off before ${POST_EVENT_ID}: ${incomplete_hook_actions}"
+  fi
+fi
+
+if [[ -z "$FINAL_STATUS" && "$EVENT" == "$POST_EVENT_ID" ]]; then
   if missing_events="$(missing_required_hook_event_passes)"; then
     FINAL_STATUS="fail"
     COMMANDS="gate prerequisite: required hook_events pass coverage scan"
     FAILURE_SUMMARY="missing pass entries for required hook_events: ${missing_events}"
-  fi
-fi
-
-if [[ -z "$FINAL_STATUS" ]] && ! is_lifecycle_event "$EVENT"; then
-  if conflict="$(find_parallel_file_lock_conflict)"; then
-    FINAL_STATUS="fail"
-    COMMANDS="gate prerequisite: parallel file lock conflict scan"
-    FAILURE_SUMMARY="$conflict"
   fi
 fi
 
@@ -777,6 +767,7 @@ append_ledger_entry "$ENTRY"
 move_active_plan_to_completed_on_pass
 
 if [[ "$FINAL_STATUS" == "escalated" ]]; then
+  record_escalation_in_plan
   force_close_failed_plan_if_needed
 fi
 

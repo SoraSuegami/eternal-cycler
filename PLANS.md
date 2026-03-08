@@ -86,6 +86,7 @@ Files in `tech-debt/` must include explicit repository-relative markdown links t
 ## ExecPlan Metadata
 
 Every skill-managed ExecPlan stores its runtime branch / PR metadata inline in the plan file.
+The remote GitHub PR is authoritative for PR URL, title, body, and head/base state. The inline metadata and PR body block in the plan are a cache refreshed by lifecycle hooks so the builder and scripts can read them locally.
 
 Required scalar metadata:
 
@@ -108,17 +109,13 @@ The current PR body must be stored between:
 * `<!-- execplan-pr-body:start -->`
 * `<!-- execplan-pr-body:end -->`
 
-When authoring a new plan before `execplan.post_creation`, include at least `execplan_target_branch`, `execplan_branch_slug`, and `execplan_take` so the hook can preserve the intended target/take context.
+When authoring a new plan before `execplan.post-creation`, include at least `execplan_target_branch`, `execplan_branch_slug`, and `execplan_take` so the hook can preserve the intended target/take context.
 
 ## Action-Level Parallel Execution
 
 One lifecycle, one ExecPlan per objective. For large work, decompose into action-level units inside that one plan; do not create separate sub-plan lifecycle documents.
 
-The `Progress` section must document execution topology for each delegated action:
-
-* `action_id`, `mode` (`serial` or `parallel`), `depends_on`, `file_locks`, `hook_events`, `worker_type`
-
-An action is parallelizable only when all `depends_on` actions are complete and `file_locks` for concurrent actions are disjoint. Delegate only `mode=parallel` actions to sub agents. The parent ExecPlan owner is responsible for conflict resolution and merging outcomes.
+If a `Progress` checklist step is coupled to a hook, document that linkage with `hook_events`. Steps without hook coupling may omit `hook_events`. Additional fields such as `action_id`, `mode`, `depends_on`, `file_locks`, and `worker_type` are optional advisory metadata for humans/LLMs; the current gate/loop implementation does not schedule from them.
 
 ## Verification Policy
 
@@ -136,21 +133,21 @@ Templates (do not edit directly; edit copies in `.agents/skills/`): `assets/defa
 
 ### Event model
 
-Each event resolves to a hook directory by naming convention. Supported event namespaces are `execplan.*` and `hook.*`. Strip that namespace, replace `_` and `.` with `-`, then prefix `execplan-hook-`.
+Each event resolves to a hook directory by naming convention. Supported event namespaces are `execplan.*` and `hook.*`. Event IDs must use dash-form names only (no underscores). Strip the namespace, replace `.` with `-`, then prefix `execplan-hook-`.
 
 Examples:
 
-* `execplan.post_creation` → `.agents/skills/execplan-hook-post-creation/`
-* `hook.tooling` → `.agents/skills/execplan-hook-tooling/`
+* `execplan.post-creation` → `.agents/skills/execplan-hook-post-creation/`
+* `hook.docs-only` → `.agents/skills/execplan-hook-docs-only/`
 
 When choosing `hook_events` for a `Progress` action, search the installed skill index for `execplan-hook-*` hooks and select the matching event ID.
 
 Mandatory lifecycle events (must always have matching hooks):
 
-* `execplan.pre_creation`
-* `execplan.post_creation`
+* `execplan.pre-creation`
+* `execplan.post-creation`
 * `execplan.resume`
-* `execplan.post_completion`
+* `execplan.post-completion`
 
 Non-lifecycle events are flexible and may be added or removed without changing this policy text, as long as their derived hook directories exist under `.agents/skills/`.
 Legacy `action.*` event IDs are rejected; `action` is reserved for `Progress` checklist items only.
@@ -161,8 +158,8 @@ Gate command: `scripts/execplan_gate.sh --event <event_id> [--plan <plan_md>] [-
 
 The gate blocks lifecycle progress when any previously attempted event remains in `fail` or `escalated` state, and additionally:
 
-* rejects lifecycle events (`execplan.pre_creation`, `execplan.post_creation`, `execplan.resume`, `execplan.post_completion`) in `Progress` action `hook_events`
-* blocks `execplan.post_completion` until `execplan.post_creation` or `execplan.resume` has a `pass` entry, and every event referenced by `hook_events` has at least one `pass` entry in the Hook Ledger
+* rejects lifecycle events (`execplan.pre-creation`, `execplan.post-creation`, `execplan.resume`, `execplan.post-completion`) in `Progress` action `hook_events`
+* blocks `execplan.post-completion` until `execplan.post-creation` or `execplan.resume` has a `pass` entry, and every event referenced by `hook_events` has at least one `pass` entry in the Hook Ledger
 
 ### Retry and escalation
 
@@ -199,11 +196,11 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 ### New plan
 
 1. **Pre-creation gate** — run out-of-sandbox before creating the plan document:
-   `scripts/execplan_gate.sh --event execplan.pre_creation`
-   Validates environment (branch, tracked working tree) and seeds an empty plan file at `eternal-cycler-out/plans/active/<current-branch>.md` when none exists yet. Benign pre-existing untracked files are allowed. If a non-empty active plan already exists for the current branch, this gate fails instead of clobbering that living document. No ledger entry is written because the plan content does not exist yet.
-2. **Create plan and post-creation gate** — create the plan document in `eternal-cycler-out/plans/active/`, write the full plan, and define all `Progress` action metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `hook_events`, `worker_type`; `hook_events` must contain only `hook.*` IDs; lifecycle events must never appear in `hook_events`). Then immediately run:
-   `scripts/execplan_gate.sh --plan <plan_md> --event execplan.post_creation`
-   Before invoking this step, ensure the current branch already has the draft PR for this take; the default `execplan.post_creation` hook fails if the current branch has no PR or only a non-draft PR. This step reads PR metadata and PR body from that draft PR, records the start snapshot, and refreshes the inline ExecPlan metadata / PR body blocks that `execplan.post_completion` requires.
+   `scripts/execplan_gate.sh --event execplan.pre-creation`
+   In loop-managed execution, the loop first switches to `TARGET_BASE_BRANCH`, runs `git pull --ff-only origin <target-branch>`, and only then creates the new work branch for this take. If either git step fails, stop and report the git error to the operator. The pre-creation gate then validates environment (branch, tracked working tree) and seeds an empty plan file at `eternal-cycler-out/plans/active/<current-branch>.md` when none exists yet. Benign pre-existing untracked files are allowed. If a non-empty active plan already exists for the current branch, this gate fails instead of clobbering that living document. No ledger entry is written because the plan content does not exist yet.
+2. **Create plan and post-creation gate** — create the plan document in `eternal-cycler-out/plans/active/`, write the full plan, and define `Progress` actions with `hook_events` (`hook_events` must contain only `hook.*` IDs in dash-form; lifecycle events must never appear in `hook_events`). Optional advisory metadata such as `action_id`, `mode`, `depends_on`, `file_locks`, and `worker_type` may be included when useful for human/LLM planning. Then immediately run:
+   `scripts/execplan_gate.sh --plan <plan_md> --event execplan.post-creation`
+   Before invoking this step, ensure the current branch already has the draft PR for this take; the default `execplan.post-creation` hook fails if the current branch has no PR or only a non-draft PR. This step reads PR metadata and PR body from that draft PR, records the start snapshot, and refreshes the inline ExecPlan metadata / PR body blocks that `execplan.post-completion` requires.
 3. **Execute actions** in dependency order. Mark each `[x]` immediately when complete. Out-of-sandbox commands must follow the sandbox escalation policy.
 4. **Run hook after each action** — run `scripts/execplan_gate.sh` for each event in `hook_events`. The gate blocks progress on failure.
 5. **Record all gate attempts** in `## Hook Ledger`.
@@ -214,22 +211,24 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 7. **Finalize plan** after all actions pass:
    * update all living-document sections (`Progress`, `Surprises & Discoveries`, `Decision Log`, `Outcomes & Retrospective`)
    * note which hook scripts were referenced, created, modified, or left unchanged, and why
-   * ensure all implementation commits are pushed
+   * ensure all implementation changes are ready to be committed and pushed; in loop-managed execution, the single commit/push happens only after the builder has already completed `execplan.post-completion` successfully and the loop has verified the resulting completed plan
+   * treat non-ignored files created during execution as intended outputs; if a temporary/build/log artifact should not be committed, ignore it before lifecycle completion
    * add tech-debt follow-up plans if needed
 8. **Post-completion gate** — run out-of-sandbox:
-   * `scripts/execplan_gate.sh --plan <active_plan_md> --event execplan.post_completion`
-   * `execplan.post_completion` is validation-only: no `git add`, `git commit`, or `git push`
-   * On pass: the gate appends the pass ledger entry and moves the plan to `eternal-cycler-out/plans/completed/`.
+   * `scripts/execplan_gate.sh --plan <active_plan_md> --event execplan.post-completion`
+   * `execplan.post-completion` is validation-only: no `git add`, `git commit`, or `git push`
+   * In loop-managed execution, the builder runs this gate and must not return success until the completed plan contains the resulting pass entry.
+   * On pass: the gate appends the pass ledger entry and moves the plan to `eternal-cycler-out/plans/completed/`; the loop then verifies that completed plan and performs one final commit/push without invoking any further builder edits.
    * On failure: the plan stays in `eternal-cycler-out/plans/active/` for revision and retry.
    * On escalation: same as step 6 — document failure, move the plan to `eternal-cycler-out/plans/completed/` as failed, and stop.
    * Lifecycle complete.
 
 ### Resume existing plan
 
-1. **Select plan** from `eternal-cycler-out/plans/active/`. If there is operator feedback, update `Progress` actions and add `hook_events` entries for any newly available hooks.
+1. **Select plan** from `eternal-cycler-out/plans/active/`. If there is operator feedback, pass it to the loop/builder; do not require manual plan editing before resume.
 2. **Resume gate** — run out-of-sandbox:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
-   Validates that the current branch matches the plan's recorded start branch and that the branch's PR is still `OPEN`, refreshes the inline ExecPlan metadata / PR body blocks from that open PR, and appends a resume record to the plan.
+   In loop-managed execution, the loop first refreshes the target branch named in the plan with `git pull --ff-only origin <target-branch>`, then switches back to the plan's recorded start branch before running this gate. If target-branch refresh or branch switching fails, stop and report the git error to the operator. The resume gate validates that the current branch matches the plan's recorded start branch and that the branch's PR is still `OPEN`, refreshes the inline ExecPlan metadata / PR body blocks from that open PR, and appends a resume record to the plan.
 3. Continue from step 3 of the new-plan path (execute actions, verify, finalize, post-completion gate).
 
 ## Skeleton of a Good ExecPlan
@@ -250,11 +249,11 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 
     - [x] (2025-10-01 13:00Z) Example completed step.
     - [ ] Example incomplete step.
-    - [ ] action_id=a3; mode=parallel; depends_on=a1,a2; file_locks=src/lookup/mod.rs; hook_events=hook.tooling; worker_type=worker; implement lookup cache rewrite.
+    - [ ] hook_events=hook.tooling; implement lookup cache rewrite.
 
     Use timestamps to measure rates of progress. Mark each action `[x]` immediately when it finishes.
 
-    Each `Progress` action must define: `action_id`, `mode` (`serial` or `parallel`), `depends_on`, `file_locks`, `hook_events`, `worker_type`. `hook_events` must contain only `hook.*` events; lifecycle events are executed only by lifecycle steps.
+    If a `Progress` line is coupled to a hook, define that linkage with `hook_events`. Steps without hook coupling may omit it. Optional advisory metadata (`action_id`, `mode`, `depends_on`, `file_locks`, `worker_type`) may be added when useful, but scripts do not currently schedule from them. `hook_events` must contain only dash-form `hook.*` events; lifecycle events are executed only by lifecycle steps.
 
     ## Hook Ledger
 

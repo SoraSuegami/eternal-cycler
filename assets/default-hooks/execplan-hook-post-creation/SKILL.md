@@ -1,9 +1,9 @@
 ---
 name: execplan-hook-post-creation
-description: Hook for execplan.post_creation. Run immediately after the ExecPlan document is created to record the start snapshot and inline ExecPlan metadata.
+description: Hook for execplan.post-creation. Run immediately after the ExecPlan document is created to record the start snapshot and inline ExecPlan metadata.
 ---
 
-# Hook: execplan.post_creation
+# Hook: execplan.post-creation
 
 This hook executes the "after plan document creation" workflow:
 
@@ -17,7 +17,7 @@ Requires `--plan`. Branch management is the caller's responsibility. The default
 Execution policy:
 
 - This event must be executed out-of-sandbox.
-- Run through gate as: `scripts/execplan_gate.sh --plan <plan_md> --event execplan.post_creation`.
+- Run through gate as: `scripts/execplan_gate.sh --plan <plan_md> --event execplan.post-creation`.
 
 ## Script
 
