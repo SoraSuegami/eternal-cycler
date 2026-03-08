@@ -128,6 +128,6 @@ test_docs_only_hook_allows_rules_paths() {
 
 test_supersede_flow_uses_two_arg_completed_destination_helper() {
   assert_file_contains \
-    "$REPO_ROOT/scripts/run_builder_reviewer_loop.sh" \
+    "$REPO_ROOT/scripts/run_builder_reviewer_loop_lib/plan_state.sh" \
     'generate_unique_completed_plan_destination "$WORKDIR" "$abs_path"'
 }
