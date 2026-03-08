@@ -1,6 +1,7 @@
 # Outside-sandbox rules for eternal-cycler.
 # Audit basis:
 # - Official Codex rules docs: https://developers.openai.com/codex/rules/
+# - Claude Code CLI reference: https://docs.anthropic.com/en/docs/claude-code/cli-reference
 # - Script audit on 2026-03-07 of:
 #   - scripts/run_builder_reviewer_loop.sh
 #   - scripts/run_builder_reviewer_doctor.sh
@@ -30,6 +31,8 @@
 #   - gh pr edit
 #   - gh pr close
 #   - codex login status
+#   - claude auth status
+#   - claude doctor
 #   - git switch
 #   - git switch -c
 #   - git pull --ff-only origin <branch>
@@ -153,6 +156,18 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["claude", "auth", "status"],
+    decision = "allow",
+    justification = "Claude Code authentication checks are part of the outside-sandbox doctor flow.",
+)
+
+prefix_rule(
+    pattern = ["claude", "doctor"],
+    decision = "allow",
+    justification = "Claude Code health checks are part of the outside-sandbox doctor flow.",
+)
+
+prefix_rule(
     pattern = ["git", "switch"],
     decision = "allow",
     justification = "The skill's start/resume/retake flows intentionally switch the real repository branch before continuing.",
@@ -190,5 +205,17 @@ prefix_rule(
     ],
     not_match = [
         "codex login status",
+    ],
+)
+
+prefix_rule(
+    pattern = ["claude", "-p"],
+    decision = "forbidden",
+    justification = "Do not invoke nested Claude Code headless runs directly. Use the audited loop script instead.",
+    match = [
+        "claude -p --cwd /tmp/repo --output-format json --permission-mode bypassPermissions \"do work\"",
+    ],
+    not_match = [
+        "claude doctor",
     ],
 )

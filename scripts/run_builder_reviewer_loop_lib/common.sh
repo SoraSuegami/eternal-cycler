@@ -14,8 +14,10 @@ Options:
   --resume-plan <path>               Canonical resume entrypoint for an active plan.
   --max-iterations <n>               Max review iterations (default: 20).
   --max-reviewer-failures <n>        Max consecutive reviewer-phase failures (default: 3).
-  --model-builder <model>            Optional model for builder codex runs.
-  --model-reviewer <model>           Optional model for reviewer codex runs.
+  --builder-provider <provider>      Builder agent provider: codex or claude.
+  --reviewer-provider <provider>     Reviewer agent provider: codex or claude.
+  --model-builder <model>            Optional model for builder provider runs.
+  --model-reviewer <model>           Optional model for reviewer provider runs.
   --help                             Show this help.
 USAGE
 }
@@ -32,6 +34,16 @@ die() {
 require_cmd() {
   local cmd="$1"
   command -v "$cmd" >/dev/null 2>&1 || die "missing required command: $cmd"
+}
+
+is_supported_provider() {
+  [[ "$1" == "codex" || "$1" == "claude" ]]
+}
+
+validate_provider_or_die() {
+  local provider="$1"
+  local role="$2"
+  is_supported_provider "$provider" || die "unsupported ${role} provider: ${provider} (expected codex or claude)"
 }
 
 is_positive_int() {
@@ -150,6 +162,26 @@ EOF_SCHEMA
   printf '%s\n' "$schema_file"
 }
 
+extract_claude_message_text() {
+  local raw="$1"
+  jq -e -r '
+    def textify:
+      if type == "string" then .
+      elif type == "array" then [ .[]? | textify ] | join("")
+      elif type == "object" then
+        if (.result? | type) == "string" then .result
+        elif (.text? | type) == "string" then .text
+        elif has("message") then .message | textify
+        elif has("content") then .content | textify
+        elif has("messages") then ([ .messages[]? | select((.role? // .type? // "") == "assistant") | textify ][-1]? // "")
+        else ""
+        end
+      else ""
+      end;
+    textify
+  ' <<< "$raw" 2>/dev/null
+}
+
 run_codex_prompt_capture() {
   local role="$1"
   local model="$2"
@@ -172,8 +204,9 @@ run_codex_prompt_capture() {
   rc=$?
   set -e
 
+  LAST_AGENT_OUTPUT=""
   if [[ -n "$schema_file" ]]; then
-    LAST_CODEX_OUTPUT="$(cat "$last_message_file" 2>/dev/null || true)"
+    LAST_AGENT_OUTPUT="$(cat "$last_message_file" 2>/dev/null || true)"
     rm -f "$last_message_file"
   fi
 
@@ -182,12 +215,83 @@ run_codex_prompt_capture() {
     return 1
   fi
 
-  if [[ -n "$schema_file" && -z "$(printf '%s' "$LAST_CODEX_OUTPUT" | tr -d '[:space:]')" ]]; then
+  if [[ -n "$schema_file" && -z "$(printf '%s' "$LAST_AGENT_OUTPUT" | tr -d '[:space:]')" ]]; then
     log "$role codex execution produced empty structured output"
     return 1
   fi
 
   return 0
+}
+
+run_claude_prompt_capture() {
+  local role="$1"
+  local model="$2"
+  local prompt_text="$3"
+  local schema_file="${4:-}"
+  local rc schema_json stdout_file stderr_file raw_output stderr_output
+  local cmd=(claude -p --cwd "$WORKDIR" --output-format json --permission-mode bypassPermissions)
+
+  if [[ -n "$model" ]]; then
+    cmd+=(--model "$model")
+  fi
+  if [[ -n "$schema_file" ]]; then
+    schema_json="$(jq -c . "$schema_file" 2>/dev/null)" || die "failed to compact Claude JSON schema from ${schema_file}"
+    cmd+=(--json-schema "$schema_json")
+  fi
+
+  stdout_file="$(mktemp)"
+  stderr_file="$(mktemp)"
+
+  set +e
+  "${cmd[@]}" "$prompt_text" >"$stdout_file" 2>"$stderr_file"
+  rc=$?
+  set -e
+
+  LAST_AGENT_OUTPUT=""
+  raw_output="$(cat "$stdout_file" 2>/dev/null || true)"
+  stderr_output="$(cat "$stderr_file" 2>/dev/null || true)"
+  rm -f "$stdout_file" "$stderr_file"
+
+  if [[ "$rc" -ne 0 ]]; then
+    if [[ -n "$(printf '%s' "$stderr_output" | tr -d '[:space:]')" ]]; then
+      log "$role claude execution failed: $(printf '%s\n' "$stderr_output" | head -n1 | sed -E 's/[[:space:]]+/ /g')"
+    else
+      log "$role claude execution failed"
+    fi
+    return 1
+  fi
+
+  if [[ -n "$schema_file" ]]; then
+    LAST_AGENT_OUTPUT="$(extract_claude_message_text "$raw_output" || true)"
+    if [[ -z "$(printf '%s' "$LAST_AGENT_OUTPUT" | tr -d '[:space:]')" ]]; then
+      log "$role claude execution produced empty structured output"
+      return 1
+    fi
+  else
+    LAST_AGENT_OUTPUT="$raw_output"
+  fi
+
+  return 0
+}
+
+run_agent_prompt_capture() {
+  local role="$1"
+  local provider="$2"
+  local model="$3"
+  local prompt_text="$4"
+  local schema_file="${5:-}"
+
+  case "$provider" in
+    codex)
+      run_codex_prompt_capture "$role" "$model" "$prompt_text" "$schema_file"
+      ;;
+    claude)
+      run_claude_prompt_capture "$role" "$model" "$prompt_text" "$schema_file"
+      ;;
+    *)
+      die "unsupported ${role} provider: ${provider}"
+      ;;
+  esac
 }
 
 post_pr_comment() {

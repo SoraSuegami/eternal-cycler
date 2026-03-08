@@ -305,6 +305,18 @@ test_docs_describe_feedback_polling_without_stopping_loop() {
     "forward them to the user as intermediate output without ending the caller agent turn or stopping the loop." || return 1
 }
 
+test_skill_docs_describe_launcher_aware_provider_selection() {
+  assert_file_contains \
+    "$REPO_ROOT/SKILL.md" \
+    'If `claude` and `codex` are both installed, ask the user which provider to use for the builder and which provider to use for the reviewer before starting the loop.' || return 1
+  assert_file_contains \
+    "$REPO_ROOT/SKILL.md" \
+    'Default both builder and reviewer to `codex`.' || return 1
+  assert_file_contains \
+    "$REPO_ROOT/SKILL.md" \
+    'Only switch builder and/or reviewer to `claude` when the user explicitly asks for Claude Code for that role.' || return 1
+}
+
 test_loop_retake_refreshes_feedback_doc_paths() {
   [[ "$(count_file_matches "$REPO_ROOT/scripts/run_builder_reviewer_loop.sh" "refresh_feedback_doc_paths")" -eq 2 ]] || return 1
   assert_file_contains \

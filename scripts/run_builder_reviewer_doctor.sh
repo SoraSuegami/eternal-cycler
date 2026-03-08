@@ -4,13 +4,15 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  run_builder_reviewer_doctor.sh [--pr-url <url> | --head-branch <branch>] [--offline-ok]
+  run_builder_reviewer_doctor.sh [--pr-url <url> | --head-branch <branch>] [--builder-provider <provider>] [--reviewer-provider <provider>] [--offline-ok]
   run_builder_reviewer_doctor.sh --help
 
 Checks:
-  - required CLIs (`git`, `gh`, `codex`, `jq`, `rg`)
+  - required CLIs (`git`, `gh`, `jq`, `rg`, and selected agent CLIs)
   - `gh auth status`
-  - `codex login status`
+  - `codex login status` when Codex is selected
+  - `claude auth status` when Claude is selected
+  - `claude doctor` when Claude is selected
   - PR metadata access (`gh pr view`) when `--pr-url` is provided
   - PR discovery access by head branch when `--head-branch` is provided
 USAGE
@@ -19,6 +21,8 @@ USAGE
 PR_URL=""
 HEAD_BRANCH=""
 OFFLINE_OK=0
+BUILDER_PROVIDER="${ETERNAL_CYCLER_BUILDER_PROVIDER:-codex}"
+REVIEWER_PROVIDER="${ETERNAL_CYCLER_REVIEWER_PROVIDER:-codex}"
 
 resolve_current_branch() {
   local branch
@@ -29,6 +33,10 @@ resolve_current_branch() {
   printf '%s\n' "$branch"
 }
 
+is_supported_provider() {
+  [[ "$1" == "codex" || "$1" == "claude" ]]
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --pr-url)
@@ -37,6 +45,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --head-branch)
       HEAD_BRANCH="${2:-}"
+      shift 2
+      ;;
+    --builder-provider)
+      BUILDER_PROVIDER="${2:-}"
+      shift 2
+      ;;
+    --reviewer-provider)
+      REVIEWER_PROVIDER="${2:-}"
       shift 2
       ;;
     --offline-ok)
@@ -70,8 +86,17 @@ if [[ -z "$PR_URL" && -z "$HEAD_BRANCH" ]]; then
   exit 2
 fi
 
+if ! is_supported_provider "$BUILDER_PROVIDER"; then
+  echo "unsupported builder provider: $BUILDER_PROVIDER" >&2
+  exit 2
+fi
+if ! is_supported_provider "$REVIEWER_PROVIDER"; then
+  echo "unsupported reviewer provider: $REVIEWER_PROVIDER" >&2
+  exit 2
+fi
+
 missing=0
-for bin in git gh codex jq rg; do
+for bin in git gh jq rg; do
   if ! command -v "$bin" >/dev/null 2>&1; then
     echo "[FAIL] missing command: $bin" >&2
     missing=1
@@ -79,6 +104,22 @@ for bin in git gh codex jq rg; do
     echo "[OK] found command: $bin"
   fi
 done
+if [[ "$BUILDER_PROVIDER" == "codex" || "$REVIEWER_PROVIDER" == "codex" ]]; then
+  if ! command -v codex >/dev/null 2>&1; then
+    echo "[FAIL] missing command: codex" >&2
+    missing=1
+  else
+    echo "[OK] found command: codex"
+  fi
+fi
+if [[ "$BUILDER_PROVIDER" == "claude" || "$REVIEWER_PROVIDER" == "claude" ]]; then
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "[FAIL] missing command: claude" >&2
+    missing=1
+  else
+    echo "[OK] found command: claude"
+  fi
+fi
 if [[ "$missing" -ne 0 ]]; then
   exit 1
 fi
@@ -122,7 +163,13 @@ run_check() {
 }
 
 run_check "GitHub authentication" gh auth status
-run_check "Codex authentication" codex login status
+if [[ "$BUILDER_PROVIDER" == "codex" || "$REVIEWER_PROVIDER" == "codex" ]]; then
+  run_check "Codex authentication" codex login status
+fi
+if [[ "$BUILDER_PROVIDER" == "claude" || "$REVIEWER_PROVIDER" == "claude" ]]; then
+  run_check "Claude authentication" claude auth status
+  run_check "Claude doctor" claude doctor
+fi
 
 if [[ -n "$PR_URL" ]]; then
   run_check "PR metadata access" gh pr view "$PR_URL" --json number,url,state,mergedAt,headRefName,baseRefName,isDraft

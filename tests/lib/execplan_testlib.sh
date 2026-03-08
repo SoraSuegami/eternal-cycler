@@ -14,6 +14,13 @@ HOOK_OUTPUT=""
 HOOK_RC=0
 LOOP_OUTPUT=""
 LOOP_RC=0
+DOCTOR_OUTPUT=""
+DOCTOR_RC=0
+
+test_command_path() {
+  local repo="$1"
+  printf '%s\n' "$repo/bin:/usr/bin:/bin"
+}
 
 init_test_workspace() {
   mkdir -p "$TEST_OUT_DIR"
@@ -28,6 +35,8 @@ init_test_workspace() {
   HOOK_RC=0
   LOOP_OUTPUT=""
   LOOP_RC=0
+  DOCTOR_OUTPUT=""
+  DOCTOR_RC=0
 }
 
 cleanup_test_workspace() {
@@ -281,7 +290,7 @@ run_loop_capture() {
   shift
 
   set +e
-  LOOP_OUTPUT="$(cd "$repo" && PATH="$repo/bin:$PATH" scripts/run_builder_reviewer_loop.sh "$@" 2>&1)"
+  LOOP_OUTPUT="$(cd "$repo" && PATH="$(test_command_path "$repo")" scripts/run_builder_reviewer_loop.sh "$@" 2>&1)"
   LOOP_RC=$?
   set -e
 }
@@ -293,6 +302,16 @@ run_feedback_helper_capture() {
   set +e
   HELPER_OUTPUT="$(cd "$repo" && scripts/execplan_user_feedback.sh "$@" 2>&1)"
   HELPER_RC=$?
+  set -e
+}
+
+run_doctor_capture() {
+  local repo="$1"
+  shift
+
+  set +e
+  DOCTOR_OUTPUT="$(cd "$repo" && PATH="$(test_command_path "$repo")" scripts/run_builder_reviewer_doctor.sh "$@" 2>&1)"
+  DOCTOR_RC=$?
   set -e
 }
 

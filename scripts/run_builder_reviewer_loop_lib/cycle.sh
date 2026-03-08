@@ -16,13 +16,13 @@ run_builder_cycle() {
   local builder_schema_file builder_payload_json builder_result builder_comment cleanup_result cleanup_kind cleanup_commit
 
   builder_schema_file="$(write_builder_output_schema)"
-  if ! run_codex_prompt_capture "$stage" "$MODEL_BUILDER" "$prompt_text" "$builder_schema_file"; then
+  if ! run_agent_prompt_capture "$stage" "$BUILDER_PROVIDER" "$MODEL_BUILDER" "$prompt_text" "$builder_schema_file"; then
     rm -f "$builder_schema_file"
     die "${stage} builder execution failed"
   fi
   rm -f "$builder_schema_file"
 
-  builder_payload_json="$(parse_builder_payload_json "$LAST_CODEX_OUTPUT" || true)"
+  builder_payload_json="$(parse_builder_payload_json "$LAST_AGENT_OUTPUT" || true)"
   [[ -n "$builder_payload_json" ]] || die "${stage} builder output was not valid JSON payload"
   builder_result="$(jq -r '.result' <<< "$builder_payload_json")"
   builder_comment="$(jq -r '.comment' <<< "$builder_payload_json")"

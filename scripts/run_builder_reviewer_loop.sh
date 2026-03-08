@@ -25,9 +25,11 @@ EXPECTED_PLAN_DOC_FILENAME=""
 CURRENT_PLAN_PATH=""
 MAX_ITERATIONS=20
 MAX_REVIEWER_FAILURES=3
+BUILDER_PROVIDER="${ETERNAL_CYCLER_BUILDER_PROVIDER:-codex}"
+REVIEWER_PROVIDER="${ETERNAL_CYCLER_REVIEWER_PROVIDER:-codex}"
 MODEL_BUILDER=""
 MODEL_REVIEWER=""
-LAST_CODEX_OUTPUT=""
+LAST_AGENT_OUTPUT=""
 FEEDBACK_HELPER_PATH=""
 USER_FEEDBACK_DOC=""
 BUILDER_RESPONSE_DOC=""
@@ -65,6 +67,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --max-reviewer-failures)
       MAX_REVIEWER_FAILURES="${2:-}"
+      shift 2
+      ;;
+    --builder-provider)
+      BUILDER_PROVIDER="${2:-}"
+      shift 2
+      ;;
+    --reviewer-provider)
+      REVIEWER_PROVIDER="${2:-}"
       shift 2
       ;;
     --model-builder)
@@ -110,9 +120,18 @@ for n in "$MAX_ITERATIONS" "$MAX_REVIEWER_FAILURES"; do
   is_positive_int "$n" || die "numeric options must be positive integers"
 done
 
-for cmd in git gh codex jq rg perl; do
+validate_provider_or_die "$BUILDER_PROVIDER" "builder"
+validate_provider_or_die "$REVIEWER_PROVIDER" "reviewer"
+
+for cmd in git gh jq rg perl; do
   require_cmd "$cmd"
 done
+if [[ "$BUILDER_PROVIDER" == "codex" || "$REVIEWER_PROVIDER" == "codex" ]]; then
+  require_cmd codex
+fi
+if [[ "$BUILDER_PROVIDER" == "claude" || "$REVIEWER_PROVIDER" == "claude" ]]; then
+  require_cmd claude
+fi
 
 WORKDIR="$(resolve_repo_root)"
 cd "$WORKDIR"
@@ -177,7 +196,10 @@ if [[ -n "$RESUME_PLAN" ]]; then
   run_command_or_die "failed to pull resume branch origin/${CURRENT_WORK_BRANCH}" git pull --ff-only origin "$CURRENT_WORK_BRANCH"
   validate_existing_pr_context "$PR_URL"
   ensure_resume_gate_for_current_head "$EXPECTED_PLAN_DOC_FILENAME"
-  "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" --pr-url "$PR_URL" >/dev/null
+  "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" \
+    --builder-provider "$BUILDER_PROVIDER" \
+    --reviewer-provider "$REVIEWER_PROVIDER" \
+    --pr-url "$PR_URL" >/dev/null
   load_plan_runtime_metadata "$EXPECTED_PLAN_DOC_FILENAME"
 else
   refresh_target_branch_or_die "$TARGET_BASE_BRANCH"
@@ -190,7 +212,10 @@ else
   PR_TITLE_BASE="$(strip_take_suffix "$PR_TITLE")"
   PR_BODY_BASE="$(strip_revision_note_block "$PR_BODY")"
 
-  "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" --head-branch "$CURRENT_WORK_BRANCH" >/dev/null
+  "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" \
+    --builder-provider "$BUILDER_PROVIDER" \
+    --reviewer-provider "$REVIEWER_PROVIDER" \
+    --head-branch "$CURRENT_WORK_BRANCH" >/dev/null
   "$SCRIPT_DIR/execplan_gate.sh" --event execplan.pre-creation >/dev/null
   PR_URL="$(create_or_reuse_draft_pr_for_branch "$CURRENT_WORK_BRANCH" "$TARGET_BASE_BRANCH" "$PR_TITLE" "$PR_BODY")"
 fi
@@ -215,15 +240,15 @@ START_COMMIT="$(git rev-parse HEAD)"
 LATEST_COMMIT="$START_COMMIT"
 RUN_ID="loop-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 
-log "loop started (work_branch=$CURRENT_WORK_BRANCH, target_branch=$TARGET_BASE_BRANCH, pr_url=$PR_URL, expected_plan=$EXPECTED_PLAN_DOC_FILENAME, start_commit=$START_COMMIT, run_id=$RUN_ID)"
+log "loop started (work_branch=$CURRENT_WORK_BRANCH, target_branch=$TARGET_BASE_BRANCH, pr_url=$PR_URL, expected_plan=$EXPECTED_PLAN_DOC_FILENAME, start_commit=$START_COMMIT, run_id=$RUN_ID, builder_provider=$BUILDER_PROVIDER, reviewer_provider=$REVIEWER_PROVIDER)"
 
 run_builder_cycle "builder_initial" "$(build_initial_builder_prompt)" "$START_COMMIT"
 
-REVIEWER_FAILURES=0
+  REVIEWER_FAILURES=0
 
 for ((ITERATION=1; ITERATION<=MAX_ITERATIONS; ITERATION++)); do
   local_reviewer_schema_file="$(write_reviewer_output_schema)"
-  if ! run_codex_prompt_capture "reviewer" "$MODEL_REVIEWER" "$(build_reviewer_prompt)" "$local_reviewer_schema_file"; then
+  if ! run_agent_prompt_capture "reviewer" "$REVIEWER_PROVIDER" "$MODEL_REVIEWER" "$(build_reviewer_prompt)" "$local_reviewer_schema_file"; then
     rm -f "$local_reviewer_schema_file"
     REVIEWER_FAILURES=$((REVIEWER_FAILURES + 1))
     if [[ "$REVIEWER_FAILURES" -ge "$MAX_REVIEWER_FAILURES" ]]; then
@@ -233,7 +258,7 @@ for ((ITERATION=1; ITERATION<=MAX_ITERATIONS; ITERATION++)); do
   fi
   rm -f "$local_reviewer_schema_file"
 
-  reviewer_payload_json="$(parse_reviewer_payload_json "$LAST_CODEX_OUTPUT" || true)"
+  reviewer_payload_json="$(parse_reviewer_payload_json "$LAST_AGENT_OUTPUT" || true)"
   if [[ -z "$reviewer_payload_json" ]]; then
     REVIEWER_FAILURES=$((REVIEWER_FAILURES + 1))
     if [[ "$REVIEWER_FAILURES" -ge "$MAX_REVIEWER_FAILURES" ]]; then

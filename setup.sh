@@ -42,13 +42,25 @@ else
 fi
 
 # Check for required CLIs
-for bin in git gh codex jq rg; do
+for bin in git gh jq rg; do
   if command -v "$bin" >/dev/null 2>&1; then
     log "OK  $bin found"
   else
     warn "$bin not found (required for eternal-cycler)"
   fi
 done
+agent_cli_found=0
+for agent_bin in codex claude; do
+  if command -v "$agent_bin" >/dev/null 2>&1; then
+    log "OK  $agent_bin found"
+    agent_cli_found=1
+  else
+    warn "$agent_bin not found (required only when selected as builder/reviewer provider)"
+  fi
+done
+if [[ "$agent_cli_found" -eq 0 ]]; then
+  warn "neither codex nor claude was found; install at least one agent CLI before running the loop"
+fi
 echo
 
 # Copy default ExecPlan hooks to the consuming repo's .agents/skills/ directory.
@@ -104,5 +116,7 @@ log "To start the builder/reviewer loop:"
 log "  ${SUBMODULE_REL}/scripts/run_builder_reviewer_loop.sh \\"
 log "    --task 'describe the task here' \\"
 log "    --target-branch main \\"
+log "    --builder-provider codex \\"
+log "    --reviewer-provider codex \\"
 log "    --pr-title 'feat: describe the task here' \\"
 log "    --pr-body '## Summary'"

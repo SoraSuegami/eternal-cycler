@@ -1,6 +1,6 @@
 # eternal-cycler
 
-An autonomous builder/reviewer loop for [Codex](https://github.com/openai/codex) agents. Install it as a git subtree in your repository to get:
+An autonomous builder/reviewer loop for [Codex](https://github.com/openai/codex) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) agents. Install it as a git subtree in your repository to get:
 
 - an autonomous agent loop that writes code, opens draft PRs, reuses existing draft PRs, reviews them, and iterates until the reviewer approves
 - an ExecPlan lifecycle system with verification gates and escalation bounds
@@ -45,7 +45,8 @@ The skill directory (`.agents/skills/eternal-cycler/`) is static at runtime. Exe
 |------|---------|
 | `git` | version control |
 | `gh` | GitHub CLI for PR operations |
-| `codex` | OpenAI Codex CLI |
+| `codex` | OpenAI Codex CLI for builder/reviewer runs when `codex` is selected |
+| `claude` | Claude Code CLI for builder/reviewer runs when `claude` is selected |
 | `jq` | JSON parsing in loop scripts |
 | `rg` | fast search in scripts and plans |
 | `perl` | prompt template expansion inside the loop |
@@ -53,7 +54,8 @@ The skill directory (`.agents/skills/eternal-cycler/`) is static at runtime. Exe
 Platform support:
 
 - Linux and macOS are supported.
-- The required CLI set is `git`, `gh`, `codex`, `jq`, `rg`, and `perl`.
+- The common CLI set is `git`, `gh`, `jq`, `rg`, and `perl`.
+- Install at least one agent CLI: `codex` and/or `claude`.
 - On macOS, stock `/bin/bash` 3.2 is supported and GNU coreutils are not required.
 - On Linux, no extra platform-specific tools are required beyond the CLI set above.
 
@@ -125,10 +127,16 @@ If you want to feed follow-up instructions into a running take, use `.agents/ski
 
 Use the skill in `SKILL.md` as the operator-facing entrypoint. The loop script is an internal runtime entrypoint used by that skill and is not the documented normal usage path.
 
+Important:
+
+- The autonomous loop invokes `codex` and/or `claude` internally as child processes outside the sandbox when those providers are selected.
+- Treat this as a trusted automation path for a repository you control. Review `.codex/rules/eternal-cycler.rules` and your local provider authentication/session state before running it.
+
 The skill handles:
 
 - target branch resolution from `target-branch` or default `main` for new takes
 - active plan selection
+- launcher-aware builder/reviewer provider selection before loop start
 - target-branch refresh before starting a new take or resuming a plan
 - using the selected plan's recorded target branch as authoritative during resume
 - passing optional task text or task files through to the loop
@@ -136,9 +144,23 @@ The skill handles:
 In practice:
 
 - If active plans exist, the skill asks whether to resume one or start a new take.
+- If the skill is running inside Claude Code and both `claude` and `codex` are installed, it asks which provider to use for builder and reviewer before starting the loop.
+- If the skill is running inside Codex, builder/reviewer default to `codex` unless the user explicitly asks to use `claude` for one or both roles.
 - For new takes, omitting `target-branch` means `main`.
 - For resume, the selected plan's `execplan_target_branch` remains authoritative even if the user also mentions another branch.
 - Follow-up instructions during a running take are written through `scripts/execplan_user_feedback.sh`; the full contract lives in `PLANS.md` and `SKILL.md`.
+
+The loop also accepts explicit provider flags when you need to bypass skill defaults:
+
+```bash
+bash .agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
+  --task-file /tmp/task.md \
+  --target-branch main \
+  --builder-provider claude \
+  --reviewer-provider codex \
+  --pr-title "feat: example" \
+  --pr-body "## Summary"
+```
 
 ## Updating
 

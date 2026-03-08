@@ -9,6 +9,7 @@ source "$TEST_ROOT/cases/execplan_hook_tests.sh"
 source "$TEST_ROOT/cases/execplan_feedback_tests.sh"
 source "$TEST_ROOT/cases/execplan_loop_new_take_tests.sh"
 source "$TEST_ROOT/cases/execplan_loop_resume_tests.sh"
+source "$TEST_ROOT/cases/execplan_provider_tests.sh"
 
 init_test_workspace
 trap cleanup_test_workspace EXIT
@@ -46,6 +47,7 @@ run_test "post completion rejects prefixed response statuses" test_post_completi
 run_test "feedback status rejects embedded prior status field" test_feedback_status_rejects_embedded_prior_status_field
 run_test "builder prompts reference feedback docs" test_builder_prompts_reference_feedback_docs
 run_test "docs describe feedback polling without stopping loop" test_docs_describe_feedback_polling_without_stopping_loop
+run_test "skill docs describe launcher-aware provider selection" test_skill_docs_describe_launcher_aware_provider_selection
 run_test "loop retake refreshes feedback doc paths" test_loop_retake_refreshes_feedback_doc_paths
 run_test "supersede flow uses two-arg completed destination helper" test_supersede_flow_uses_two_arg_completed_destination_helper
 run_test "new take requires target branch refresh" test_new_take_requires_target_branch_refresh
@@ -58,6 +60,17 @@ run_test "resume plan requires target branch refresh" test_resume_plan_requires_
 run_test "loop rejects legacy pr-url resume entrypoint" test_loop_rejects_legacy_pr_url_resume_entrypoint
 run_test "resume loop invokes execplan.resume gate when missing" test_resume_loop_invokes_resume_gate_when_missing
 run_test "resume loop skips duplicate execplan.resume gate" test_resume_loop_skips_duplicate_resume_gate
+run_test "doctor supports claude without codex" test_doctor_supports_claude_without_codex
+run_test "doctor fails when selected claude auth fails" test_doctor_fails_when_selected_claude_auth_fails
+run_test "doctor rejects missing selected provider" test_doctor_rejects_missing_selected_provider
+run_test "doctor fails when selected codex auth fails" test_doctor_fails_when_selected_codex_auth_fails
+run_test "doctor fails when selected claude doctor fails" test_doctor_fails_when_selected_claude_doctor_fails
+run_test "loop defaults to codex when both agent clis exist" test_loop_defaults_to_codex_when_both_agent_clis_exist
+run_test "loop new take success matrix" test_loop_new_take_success_matrix
+run_test "loop resume success matrix" test_loop_resume_success_matrix
+run_test "loop passes json schema to claude" test_loop_passes_json_schema_to_claude
+run_test "loop ignores claude stderr when stdout json is valid" test_loop_ignores_claude_stderr_when_stdout_json_is_valid
+run_test "loop rejects invalid claude builder payload" test_loop_rejects_invalid_claude_builder_payload
 
 if [[ "$FAILURES" -ne 0 ]]; then
   printf '%s test(s) failed\n' "$FAILURES" >&2
