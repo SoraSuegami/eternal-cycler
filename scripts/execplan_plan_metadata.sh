@@ -15,6 +15,11 @@ repo_rel_path() {
   local repo_root="$1"
   local path="$2"
 
+  if [[ "$path" == "$repo_root" ]]; then
+    printf '.\n'
+    return 0
+  fi
+
   if [[ "$path" == "$repo_root/"* ]]; then
     printf '%s\n' "${path#"$repo_root/"}"
     return 0

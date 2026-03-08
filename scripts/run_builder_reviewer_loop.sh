@@ -117,9 +117,9 @@ done
 WORKDIR="$(resolve_repo_root)"
 cd "$WORKDIR"
 SUBMODULE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SUBMODULE_REL="$(realpath --relative-to="$WORKDIR" "$SUBMODULE_ROOT")"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/execplan_plan_metadata.sh"
+SUBMODULE_REL="$(repo_rel_path "$WORKDIR" "$SUBMODULE_ROOT")"
 
 PATH_CONTEXT="Path context (all paths are from the repository root):
 - Policy docs:           ${SUBMODULE_REL}/PLANS.md, ${SUBMODULE_REL}/REVIEW.md
@@ -205,10 +205,10 @@ if has_tracked_dirty; then
   die "tracked working tree became dirty after PR preparation"
 fi
 
-declare -A BASELINE_UNTRACKED=()
+BASELINE_UNTRACKED_LIST=""
 while IFS= read -r path; do
   [[ -z "$path" ]] && continue
-  BASELINE_UNTRACKED["$path"]=1
+  BASELINE_UNTRACKED_LIST+="${path}"$'\n'
 done < <(git ls-files --others --exclude-standard)
 
 START_COMMIT="$(git rev-parse HEAD)"

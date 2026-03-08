@@ -20,7 +20,10 @@ test_resume_plan_requires_target_branch_refresh() {
     "$branch" \
     "- [ ] hook_events=none; resume work." \
     "$(resume_pass_entry)"
-  sed -i 's/^- execplan_target_branch: main$/- execplan_target_branch: missing-target/' "$plan_abs"
+  replace_in_file \
+    "$plan_abs" \
+    '^- execplan_target_branch: main$' \
+    '- execplan_target_branch: missing-target' || return 1
 
   mkdir -p "$repo/bin"
   cat > "$repo/bin/gh" <<EOF_STUB

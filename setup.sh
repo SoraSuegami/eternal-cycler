@@ -6,7 +6,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
-SUBMODULE_REL="$(realpath --relative-to="$REPO_ROOT" "$SCRIPT_DIR")"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/scripts/execplan_plan_metadata.sh"
+SUBMODULE_REL="$(repo_rel_path "$REPO_ROOT" "$SCRIPT_DIR")"
 
 log()  { echo "[setup] $*"; }
 warn() { echo "[setup] WARN: $*" >&2; }

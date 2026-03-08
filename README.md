@@ -48,6 +48,14 @@ The skill directory (`.agents/skills/eternal-cycler/`) is static at runtime. Exe
 | `codex` | OpenAI Codex CLI |
 | `jq` | JSON parsing in loop scripts |
 | `rg` | fast search in scripts and plans |
+| `perl` | prompt template expansion inside the loop |
+
+Platform support:
+
+- Linux and macOS are supported.
+- The required CLI set is `git`, `gh`, `codex`, `jq`, `rg`, and `perl`.
+- On macOS, stock `/bin/bash` 3.2 is supported and GNU coreutils are not required.
+- On Linux, no extra platform-specific tools are required beyond the CLI set above.
 
 ## Installation
 
@@ -67,7 +75,7 @@ Then run setup:
 bash .agents/skills/eternal-cycler/setup.sh
 ```
 
-Setup copies the shared hook skills, installs the Codex rules file, and creates the plan directories:
+Setup copies the shared runtime skills, installs the Codex rules file, and creates the plan directories:
 
 ```text
 [setup] OK   copied execplan-hook-pre-creation -> .agents/skills/execplan-hook-pre-creation
@@ -115,34 +123,22 @@ If you want to feed follow-up instructions into a running take, use `.agents/ski
 
 ## Usage
 
-The preferred entrypoint is the skill in `SKILL.md`, which handles:
+Use the skill in `SKILL.md` as the operator-facing entrypoint. The loop script is an internal runtime entrypoint used by that skill and is not the documented normal usage path.
+
+The skill handles:
 
 - target branch resolution from `target-branch` or default `main` for new takes
 - active plan selection
-- direct loop invocation
 - target-branch refresh before starting a new take or resuming a plan
 - using the selected plan's recorded target branch as authoritative during resume
+- passing optional task text or task files through to the loop
 
-You can also invoke the loop directly.
+In practice:
 
-New take:
-
-```bash
-.agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
-  --task "add input validation to the login form" \
-  --target-branch main \
-  --pr-title "feat: add login form input validation" \
-  --pr-body "## Summary\n- validate login form input before submit\n- add regression coverage"
-```
-
-Resume an existing plan/PR:
-
-```bash
-PLAN=eternal-cycler-out/plans/active/login-validation-20260307-1430.md
-.agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh \
-  --resume-plan "$PLAN" \
-  --task-file task.md
-```
+- If active plans exist, the skill asks whether to resume one or start a new take.
+- For new takes, omitting `target-branch` means `main`.
+- For resume, the selected plan's `execplan_target_branch` remains authoritative even if the user also mentions another branch.
+- Follow-up instructions during a running take are written through `scripts/execplan_user_feedback.sh`; the full contract lives in `PLANS.md` and `SKILL.md`.
 
 ## Updating
 
@@ -161,6 +157,16 @@ Re-run setup after updating so the default hooks and `.codex/rules/eternal-cycle
 ```bash
 bash .agents/skills/eternal-cycler/setup.sh
 ```
+
+For a quick compatibility check:
+
+```bash
+bash .agents/skills/eternal-cycler/setup.sh
+bash .agents/skills/eternal-cycler/scripts/run_builder_reviewer_loop.sh --help
+bash .agents/skills/eternal-cycler/tests/execplan_tests.sh
+```
+
+On macOS, use `/bin/bash` instead of `bash` if you want to validate the stock system shell explicitly.
 
 ## Adding custom hooks
 

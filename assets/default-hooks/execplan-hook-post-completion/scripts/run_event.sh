@@ -200,8 +200,9 @@ user_feedback_abs="$(plan_abs_path "$REPO_ROOT" "$user_feedback_rel")"
 builder_response_rel="$(builder_response_rel_path_for_plan "$PLAN")"
 builder_response_abs="$(plan_abs_path "$REPO_ROOT" "$builder_response_rel")"
 if [[ -f "$user_feedback_abs" ]]; then
-  declare -A feedback_ids=()
-  declare -A responded_ids=()
+  feedback_ids=""
+  responded_ids=""
+  feedback_count=0
   unanswered_ids=()
 
   while IFS= read -r feedback_id; do
@@ -209,24 +210,28 @@ if [[ -f "$user_feedback_abs" ]]; then
     if [[ "$feedback_id" == "__parse_error__" ]]; then
       fail_validation "malformed user feedback doc: ${user_feedback_rel}"
     fi
-    feedback_ids["$feedback_id"]=1
+    feedback_ids+="${feedback_id}"$'\n'
+    feedback_count=$((feedback_count + 1))
   done < <(collect_user_feedback_ids "$user_feedback_abs")
 
-  if [[ "${#feedback_ids[@]}" -gt 0 ]]; then
+  if [[ "$feedback_count" -gt 0 ]]; then
     [[ -f "$builder_response_abs" ]] || fail_validation "missing builder response doc for ${user_feedback_rel}"
     while IFS= read -r feedback_id; do
       [[ -z "$feedback_id" ]] && continue
       if [[ "$feedback_id" == "__parse_error__" ]]; then
         fail_validation "malformed builder response doc: ${builder_response_rel}"
       fi
-      responded_ids["$feedback_id"]=1
+      responded_ids+="${feedback_id}"$'\n'
     done < <(collect_builder_response_feedback_ids "$builder_response_abs")
 
-    for feedback_id in "${!feedback_ids[@]}"; do
-      if [[ -z "${responded_ids[$feedback_id]:-}" ]]; then
+    while IFS= read -r feedback_id; do
+      [[ -z "$feedback_id" ]] && continue
+      if ! grep -Fqx -- "$feedback_id" <<< "$responded_ids"; then
         unanswered_ids+=("$feedback_id")
       fi
-    done
+    done <<EOF_FEEDBACK_IDS
+$feedback_ids
+EOF_FEEDBACK_IDS
     if [[ "${#unanswered_ids[@]}" -gt 0 ]]; then
       fail_validation "unanswered user feedback remains in ${user_feedback_rel}: ${unanswered_ids[*]}"
     fi

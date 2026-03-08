@@ -1,2 +1,4 @@
+.agents/
+.codex/
 tests/out/*
 !tests/out/.gitkeep

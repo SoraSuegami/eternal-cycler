@@ -31,7 +31,11 @@ commands+=("git diff --name-only --relative HEAD --")
 commands+=("git ls-files --others --exclude-standard")
 commands+=("rg -n <placeholder-pattern> <changed-doc-targets>")
 
-mapfile -t paths < <({
+paths=()
+while IFS= read -r path; do
+  [[ -z "$path" ]] && continue
+  paths+=("$path")
+done < <({
   git diff --name-only --relative HEAD --
   git ls-files --others --exclude-standard
 } | sed '/^$/d' | sort -u)

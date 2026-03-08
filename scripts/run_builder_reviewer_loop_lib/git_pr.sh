@@ -51,7 +51,7 @@ get_new_untracked_paths() {
   local path
   while IFS= read -r path; do
     [[ -z "$path" ]] && continue
-    if [[ -z "${BASELINE_UNTRACKED[$path]+x}" ]]; then
+    if ! grep -Fqx -- "$path" <<< "${BASELINE_UNTRACKED_LIST:-}"; then
       printf '%s\n' "$path"
     fi
   done < <(git ls-files --others --exclude-standard)
@@ -77,12 +77,17 @@ stage_managed_plan_doc_if_needed() {
 
 auto_stage_commit_and_push() {
   local commit_message="$1"
+  local path
+  local NEW_UNTRACKED=()
 
   git add -u -- . >/dev/null 2>&1 || die "failed to stage tracked changes"
   stage_managed_plan_doc_if_needed "$EXPECTED_PLAN_DOC_FILENAME"
   stage_managed_plan_doc_if_needed "$CURRENT_PLAN_PATH"
 
-  mapfile -t NEW_UNTRACKED < <(get_new_untracked_paths)
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    NEW_UNTRACKED+=("$path")
+  done < <(get_new_untracked_paths)
   if [[ ${#NEW_UNTRACKED[@]} -gt 0 ]]; then
     for path in "${NEW_UNTRACKED[@]}"; do
       git add -- "$path" >/dev/null 2>&1 || die "failed to stage new untracked path: $path"

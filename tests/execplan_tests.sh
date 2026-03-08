@@ -32,6 +32,7 @@ run_test "pre creation allows untracked files" test_pre_creation_allows_untracke
 run_test "pre creation rejects existing nonempty plan file" test_pre_creation_rejects_existing_nonempty_plan_file
 run_test "post creation requires draft pr" test_post_creation_requires_draft_pr
 run_test "docs only hook allows rules paths" test_docs_only_hook_allows_rules_paths
+run_test "get_new_untracked_paths ignores large baseline matches" test_get_new_untracked_paths_ignores_large_baseline_matches
 run_test "feedback submit creates user feedback doc" test_feedback_submit_creates_user_feedback_doc
 run_test "feedback respond records builder question" test_feedback_respond_records_builder_question
 run_test "feedback status reports unanswered ids" test_feedback_status_reports_unanswered_ids
@@ -40,6 +41,7 @@ run_test "feedback status rejects nonexistent plan" test_feedback_status_rejects
 run_test "feedback status rejects non-active plan" test_feedback_status_rejects_non_active_plan
 run_test "post completion requires builder responses for feedback" test_post_completion_requires_builder_responses_for_feedback
 run_test "post completion accepts question response as answered" test_post_completion_accepts_question_response_as_answered
+run_test "post completion accepts answered feedback with large response doc" test_post_completion_accepts_answered_feedback_with_large_response_doc
 run_test "post completion rejects prefixed response statuses" test_post_completion_rejects_prefixed_response_statuses
 run_test "feedback status rejects embedded prior status field" test_feedback_status_rejects_embedded_prior_status_field
 run_test "builder prompts reference feedback docs" test_builder_prompts_reference_feedback_docs

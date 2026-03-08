@@ -126,6 +126,21 @@ test_docs_only_hook_allows_rules_paths() {
   [[ "$HOOK_OUTPUT" == *"STATUS=pass"* ]]
 }
 
+test_get_new_untracked_paths_ignores_large_baseline_matches() {
+  local repo baseline_file filler_line
+
+  repo="$(setup_fixture_repo)" || return 1
+  printf 'baseline\n' > "$repo/baseline.txt"
+  baseline_file="$(mktemp "$TEST_OUT_DIR/tmp.baseline.XXXXXX")" || return 1
+  TMP_DIRS+=("$baseline_file")
+  filler_line="filler-$(perl -e 'print "x" x 200000')"
+  printf 'baseline.txt\n%s\n' "$filler_line" > "$baseline_file"
+
+  run_get_new_untracked_capture "$repo" "$baseline_file"
+  [[ "$HELPER_RC" -eq 0 ]] || return 1
+  [[ -z "$HELPER_OUTPUT" ]]
+}
+
 test_supersede_flow_uses_two_arg_completed_destination_helper() {
   assert_file_contains \
     "$REPO_ROOT/scripts/run_builder_reviewer_loop_lib/plan_state.sh" \

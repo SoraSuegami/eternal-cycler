@@ -47,6 +47,20 @@ run_test() {
   fi
 }
 
+replace_in_file() {
+  local file="$1"
+  local pattern="$2"
+  local replacement="$3"
+  local tmp
+
+  tmp="$(mktemp "$TEST_OUT_DIR/tmp.replace.XXXXXX")" || return 1
+  sed "s/${pattern}/${replacement}/" "$file" > "$tmp" || {
+    rm -f "$tmp"
+    return 1
+  }
+  mv "$tmp" "$file"
+}
+
 setup_fixture_repo() {
   local tmp repo
 
@@ -61,7 +75,8 @@ setup_fixture_repo() {
 
   (
     cd "$repo" &&
-    git init -b main >/dev/null &&
+    git init >/dev/null &&
+    git checkout -b main >/dev/null &&
     git config user.email "test@example.com" &&
     git config user.name "ExecPlan Tests" &&
     git add . &&
@@ -277,6 +292,20 @@ run_feedback_helper_capture() {
 
   set +e
   HELPER_OUTPUT="$(cd "$repo" && scripts/execplan_user_feedback.sh "$@" 2>&1)"
+  HELPER_RC=$?
+  set -e
+}
+
+run_get_new_untracked_capture() {
+  local repo="$1"
+  local baseline_file="$2"
+
+  set +e
+  HELPER_OUTPUT="$(
+    cd "$repo" &&
+    bash -c 'set -euo pipefail; BASELINE_UNTRACKED_LIST="$(cat "$1")"; source "scripts/run_builder_reviewer_loop_lib/git_pr.sh"; get_new_untracked_paths' \
+      _ "$baseline_file" 2>&1
+  )"
   HELPER_RC=$?
   set -e
 }
