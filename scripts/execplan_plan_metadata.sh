@@ -6,6 +6,10 @@ EXECPLAN_PR_BODY_START="<!-- execplan-pr-body:start -->"
 EXECPLAN_PR_BODY_END="<!-- execplan-pr-body:end -->"
 EXECPLAN_REVISION_NOTE_START="<!-- execplan-revision-note:start -->"
 EXECPLAN_REVISION_NOTE_END="<!-- execplan-revision-note:end -->"
+EXECPLAN_USER_FEEDBACK_START="<!-- execplan-user-feedback:start -->"
+EXECPLAN_USER_FEEDBACK_END="<!-- execplan-user-feedback:end -->"
+EXECPLAN_BUILDER_RESPONSE_START="<!-- execplan-builder-response:start -->"
+EXECPLAN_BUILDER_RESPONSE_END="<!-- execplan-builder-response:end -->"
 
 repo_rel_path() {
   local repo_root="$1"
@@ -39,6 +43,16 @@ plan_rel_path_for_branch() {
 completed_plan_rel_path_for_branch() {
   local branch="$1"
   printf 'eternal-cycler-out/plans/completed/%s.md\n' "$branch"
+}
+
+user_feedback_rel_path_for_plan() {
+  local plan_path="$1"
+  printf 'eternal-cycler-out/user-feedback/%s\n' "$(basename "$plan_path")"
+}
+
+builder_response_rel_path_for_plan() {
+  local plan_path="$1"
+  printf 'eternal-cycler-out/builder-response/%s\n' "$(basename "$plan_path")"
 }
 
 plan_abs_path_for_branch() {

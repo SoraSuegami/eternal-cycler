@@ -29,13 +29,15 @@ your-repo/
 │       ├── execplan-hook-docs-only/
 │       └── execplan-hook-tooling/
 └── eternal-cycler-out/
-    └── plans/
-        ├── active/
-        ├── completed/
-        └── tech-debt/
+    ├── plans/
+    │   ├── active/
+    │   ├── completed/
+    │   └── tech-debt/
+    ├── user-feedback/
+    └── builder-response/
 ```
 
-The skill directory (`.agents/skills/eternal-cycler/`) is static at runtime. ExecPlan lifecycle artifacts live under `eternal-cycler-out/plans/`, while operator-maintained outside-sandbox policy changes are recorded in `.codex/rules/eternal-cycler.rules`.
+The skill directory (`.agents/skills/eternal-cycler/`) is static at runtime. ExecPlan lifecycle artifacts live under `eternal-cycler-out/plans/`. Live operator feedback uses `eternal-cycler-out/user-feedback/` and `eternal-cycler-out/builder-response/`. Operator-maintained outside-sandbox policy changes are recorded in `.codex/rules/eternal-cycler.rules`.
 
 ## Prerequisites
 
@@ -108,6 +110,8 @@ The current PR body is cached in the plan between:
 - `<!-- execplan-pr-body:end -->`
 
 The remote GitHub PR is authoritative for PR URL, title, body, and head/base state. The plan is authoritative for ExecPlan-local state such as actions, Hook Ledger entries, snapshots, resume records, supersede/failure records, and retrospectives.
+
+If you want to feed follow-up instructions into a running take, use `.agents/skills/eternal-cycler/scripts/execplan_user_feedback.sh`. The caller agent writes translated English feedback items into `eternal-cycler-out/user-feedback/`, polls `status --format json`, and forwards any new builder `question` / `objection` responses to the user as intermediate output without stopping the loop. The full contract lives in `PLANS.md`.
 
 ## Usage
 

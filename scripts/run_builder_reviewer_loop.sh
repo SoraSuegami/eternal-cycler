@@ -28,6 +28,9 @@ MAX_REVIEWER_FAILURES=3
 MODEL_BUILDER=""
 MODEL_REVIEWER=""
 LAST_CODEX_OUTPUT=""
+FEEDBACK_HELPER_PATH=""
+USER_FEEDBACK_DOC=""
+BUILDER_RESPONSE_DOC=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -122,9 +125,12 @@ PATH_CONTEXT="Path context (all paths are from the repository root):
 - Policy docs:           ${SUBMODULE_REL}/PLANS.md, ${SUBMODULE_REL}/REVIEW.md
 - Outside-sandbox rules: .codex/rules/eternal-cycler.rules
 - ExecPlan gate:         ${SUBMODULE_REL}/scripts/execplan_gate.sh
+- Feedback helper:       ${SUBMODULE_REL}/scripts/execplan_user_feedback.sh
 - ExecPlan hooks:        .agents/skills/execplan-hook-*/  (copied from ${SUBMODULE_REL}/assets/default-hooks/ by setup.sh)
 - Hook naming/path rules: see ${SUBMODULE_REL}/PLANS.md (single source of truth)
 - Plans dir:             eternal-cycler-out/plans/
+- User feedback dir:     eternal-cycler-out/user-feedback/
+- Builder response dir:  eternal-cycler-out/builder-response/
 - ExecPlan metadata:     use the execplan-metadata and execplan-pr-body marker blocks inside the plan file
 Paths to policy docs and gate script are relative to ${SUBMODULE_REL}/. Paths to hooks and plans are relative to the repository root."
 
@@ -188,6 +194,9 @@ else
   "$SCRIPT_DIR/execplan_gate.sh" --event execplan.pre-creation >/dev/null
   PR_URL="$(create_or_reuse_draft_pr_for_branch "$CURRENT_WORK_BRANCH" "$TARGET_BASE_BRANCH" "$PR_TITLE" "$PR_BODY")"
 fi
+
+FEEDBACK_HELPER_PATH="${SUBMODULE_REL}/scripts/execplan_user_feedback.sh"
+refresh_feedback_doc_paths
 
 if [[ -n "$(git ls-files -u)" ]]; then
   die "unmerged paths detected after PR preparation"
@@ -290,6 +299,7 @@ for ((ITERATION=1; ITERATION<=MAX_ITERATIONS; ITERATION++)); do
   PR_BODY="$replacement_pr_body"
   CURRENT_TAKE="$replacement_take"
   EXPECTED_PLAN_DOC_FILENAME="$(plan_rel_path_for_branch "$CURRENT_WORK_BRANCH")"
+  refresh_feedback_doc_paths
   LATEST_COMMIT="$(git rev-parse HEAD)"
 
   builder_prompt="$(build_retake_builder_prompt "$superseded_plan_path" "$old_pr_url" "$reviewer_comment_body" "$comment_url")"

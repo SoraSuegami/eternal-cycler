@@ -83,6 +83,13 @@ Active plans are the only plans that may still be revised or retried. Completed 
 
 Files in `tech-debt/` must include explicit repository-relative markdown links to the related plans (active or completed) that introduced, mitigated, or depend on that debt.
 
+Live operator feedback artifacts are stored separately from plan lifecycle documents:
+
+* Caller-written feedback → `eternal-cycler-out/user-feedback/<plan-filename>.md`
+* Builder-written responses → `eternal-cycler-out/builder-response/<plan-filename>.md`
+
+Those filenames are keyed only by the plan filename so they remain stable while the plan moves between `active/` and `completed/`.
+
 ## ExecPlan Metadata
 
 Every skill-managed ExecPlan stores its runtime branch / PR metadata inline in the plan file.
@@ -217,6 +224,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
    * `scripts/execplan_gate.sh --plan <active_plan_md> --event execplan.post-completion`
    * `execplan.post-completion` is validation-only: no `git add`, `git commit`, or `git push`
    * In loop-managed execution, the builder runs this gate and must not return success until the completed plan contains the resulting pass entry.
+   * If `eternal-cycler-out/user-feedback/<plan-filename>.md` exists, `execplan.post-completion` also requires every `feedback_id` in that file to have at least one terminal response record in `eternal-cycler-out/builder-response/<plan-filename>.md`.
    * On pass: the gate appends the pass ledger entry and moves the plan to `eternal-cycler-out/plans/completed/`; the loop then verifies that completed plan and continues with its normal checkpoint/finalization commit/push behavior without invoking any further builder edits.
    * On failure: the plan stays in `eternal-cycler-out/plans/active/` for revision and retry.
    * On escalation: same as step 6 — document failure, move the plan to `eternal-cycler-out/plans/completed/` as failed, and stop.
@@ -229,6 +237,30 @@ Two paths depending on whether you are starting a new plan or resuming an existi
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
    In loop-managed execution, the loop always treats the target branch recorded in the plan as authoritative. It first refreshes that plan-recorded target branch with `git pull --ff-only origin <target-branch>`, then switches back to the plan's recorded start branch before running this gate. Any direct resume-time target-branch input must be ignored. If target-branch refresh or branch switching fails, stop and report the git error to the operator. The resume gate validates that the current branch matches the plan's recorded start branch and that the branch's PR is still `OPEN`, refreshes the inline ExecPlan metadata / PR body blocks from that open PR, and appends a resume record to the plan.
 3. Continue from step 3 of the new-plan path (execute actions, verify, finalize, post-completion gate).
+
+## Live Feedback Interrupts
+
+Live follow-up feedback is file-mediated. The loop does not inject new input into a running builder session. Instead, the caller agent and builder coordinate through two append-only runtime artifacts.
+
+Caller responsibilities:
+
+* Translate user follow-up into English before handing it to the builder workflow.
+* Decompose follow-up into independent items.
+* Write only through `scripts/execplan_user_feedback.sh submit --plan <plan_md> --item <english_text> [--item ...]`.
+* Poll `scripts/execplan_user_feedback.sh status --plan <plan_md> --format json` while the loop runs.
+* If the builder has appended any new `status=question` or `status=objection` entries, forward them to the user as intermediate status output.
+* Do not stop the loop merely because a question/objection was forwarded. The loop continues unless the user explicitly requests stop.
+
+Builder responsibilities:
+
+* Read `eternal-cycler-out/user-feedback/<plan-filename>.md` whenever it exists.
+* Write only through `scripts/execplan_user_feedback.sh respond`.
+* Never edit the user-feedback or builder-response documents directly.
+* For every `feedback_id`, record at least one terminal response before returning success:
+  * `status=implemented` when the feedback was accepted and applied
+  * `status=question` when clarification is needed
+  * `status=objection` when the builder rejects the requested approach
+* `implemented`, `question`, and `objection` all count as answered for `execplan.post-completion`.
 
 ## Skeleton of a Good ExecPlan
 

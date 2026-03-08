@@ -101,6 +101,53 @@ has_unresolved_latest_nonpass_event() {
   '
 }
 
+collect_user_feedback_ids() {
+  local feedback_doc="$1"
+
+  [[ -f "$feedback_doc" ]] || return 0
+  sed -n "/${EXECPLAN_USER_FEEDBACK_START//\//\\/}/,/${EXECPLAN_USER_FEEDBACK_END//\//\\/}/p" "$feedback_doc" | awk '
+    /^- feedback_item:/ {
+      if (!match($0, /feedback_id=uf-[0-9]+/)) {
+        print "__parse_error__"
+        exit 0
+      }
+      id = substr($0, RSTART, RLENGTH)
+      sub(/^feedback_id=/, "", id)
+      print id
+    }
+  '
+}
+
+collect_builder_response_feedback_ids() {
+  local response_doc="$1"
+
+  [[ -f "$response_doc" ]] || return 0
+  sed -n "/${EXECPLAN_BUILDER_RESPONSE_START//\//\\/}/,/${EXECPLAN_BUILDER_RESPONSE_END//\//\\/}/p" "$response_doc" | awk '
+    /^- response_item:/ {
+      status = ""
+      feedback = ""
+      n = split($0, parts, ";")
+      for (i = 1; i <= n; i++) {
+        part = parts[i]
+        gsub(/^[[:space:]]*-[[:space:]]*response_item:[[:space:]]*/, "", part)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", part)
+        if (part ~ /^status=(implemented|question|objection)$/) {
+          status = part
+          sub(/^status=/, "", status)
+        } else if (part ~ /^feedback_id=uf-[0-9]+$/) {
+          feedback = part
+          sub(/^feedback_id=/, "", feedback)
+        }
+      }
+      if (status == "" || feedback == "") {
+        print "__parse_error__"
+        exit 0
+      }
+      print feedback
+    }
+  '
+}
+
 plan_rel="$(repo_rel_path "$REPO_ROOT" "$PLAN")"
 if [[ "$plan_rel" != eternal-cycler-out/plans/active/* ]]; then
   fail_validation "execplan.post-completion requires an active plan path; got ${plan_rel}"
@@ -146,6 +193,44 @@ if ! rg -q "<!-- execplan-start-untracked:start -->" "$PLAN"; then
 fi
 if ! rg -q "<!-- execplan-start-tracked:start -->" "$PLAN"; then
   fail_validation "missing execplan start tracked snapshot in plan; run execplan.post-creation and retry"
+fi
+
+user_feedback_rel="$(user_feedback_rel_path_for_plan "$PLAN")"
+user_feedback_abs="$(plan_abs_path "$REPO_ROOT" "$user_feedback_rel")"
+builder_response_rel="$(builder_response_rel_path_for_plan "$PLAN")"
+builder_response_abs="$(plan_abs_path "$REPO_ROOT" "$builder_response_rel")"
+if [[ -f "$user_feedback_abs" ]]; then
+  declare -A feedback_ids=()
+  declare -A responded_ids=()
+  unanswered_ids=()
+
+  while IFS= read -r feedback_id; do
+    [[ -z "$feedback_id" ]] && continue
+    if [[ "$feedback_id" == "__parse_error__" ]]; then
+      fail_validation "malformed user feedback doc: ${user_feedback_rel}"
+    fi
+    feedback_ids["$feedback_id"]=1
+  done < <(collect_user_feedback_ids "$user_feedback_abs")
+
+  if [[ "${#feedback_ids[@]}" -gt 0 ]]; then
+    [[ -f "$builder_response_abs" ]] || fail_validation "missing builder response doc for ${user_feedback_rel}"
+    while IFS= read -r feedback_id; do
+      [[ -z "$feedback_id" ]] && continue
+      if [[ "$feedback_id" == "__parse_error__" ]]; then
+        fail_validation "malformed builder response doc: ${builder_response_rel}"
+      fi
+      responded_ids["$feedback_id"]=1
+    done < <(collect_builder_response_feedback_ids "$builder_response_abs")
+
+    for feedback_id in "${!feedback_ids[@]}"; do
+      if [[ -z "${responded_ids[$feedback_id]:-}" ]]; then
+        unanswered_ids+=("$feedback_id")
+      fi
+    done
+    if [[ "${#unanswered_ids[@]}" -gt 0 ]]; then
+      fail_validation "unanswered user feedback remains in ${user_feedback_rel}: ${unanswered_ids[*]}"
+    fi
+  fi
 fi
 
 echo "COMMANDS=$(IFS=' | '; echo "${commands[*]}")"

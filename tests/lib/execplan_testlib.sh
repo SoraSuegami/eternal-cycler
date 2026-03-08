@@ -271,6 +271,16 @@ run_loop_capture() {
   set -e
 }
 
+run_feedback_helper_capture() {
+  local repo="$1"
+  shift
+
+  set +e
+  HELPER_OUTPUT="$(cd "$repo" && scripts/execplan_user_feedback.sh "$@" 2>&1)"
+  HELPER_RC=$?
+  set -e
+}
+
 assert_file_contains() {
   local path="$1"
   local expected="$2"

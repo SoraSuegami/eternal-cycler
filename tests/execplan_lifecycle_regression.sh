@@ -6,6 +6,7 @@ TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$TEST_ROOT/lib/execplan_testlib.sh"
 source "$TEST_ROOT/cases/execplan_gate_tests.sh"
 source "$TEST_ROOT/cases/execplan_hook_tests.sh"
+source "$TEST_ROOT/cases/execplan_feedback_tests.sh"
 source "$TEST_ROOT/cases/execplan_loop_new_take_tests.sh"
 source "$TEST_ROOT/cases/execplan_loop_resume_tests.sh"
 
@@ -31,6 +32,19 @@ run_test "pre creation allows untracked files" test_pre_creation_allows_untracke
 run_test "pre creation rejects existing nonempty plan file" test_pre_creation_rejects_existing_nonempty_plan_file
 run_test "post creation requires draft pr" test_post_creation_requires_draft_pr
 run_test "docs only hook allows rules paths" test_docs_only_hook_allows_rules_paths
+run_test "feedback submit creates user feedback doc" test_feedback_submit_creates_user_feedback_doc
+run_test "feedback respond records builder question" test_feedback_respond_records_builder_question
+run_test "feedback status reports unanswered ids" test_feedback_status_reports_unanswered_ids
+run_test "feedback submit rejects nonexistent plan" test_feedback_submit_rejects_nonexistent_plan
+run_test "feedback status rejects nonexistent plan" test_feedback_status_rejects_nonexistent_plan
+run_test "feedback status rejects non-active plan" test_feedback_status_rejects_non_active_plan
+run_test "post completion requires builder responses for feedback" test_post_completion_requires_builder_responses_for_feedback
+run_test "post completion accepts question response as answered" test_post_completion_accepts_question_response_as_answered
+run_test "post completion rejects prefixed response statuses" test_post_completion_rejects_prefixed_response_statuses
+run_test "feedback status rejects embedded prior status field" test_feedback_status_rejects_embedded_prior_status_field
+run_test "builder prompts reference feedback docs" test_builder_prompts_reference_feedback_docs
+run_test "docs describe feedback polling without stopping loop" test_docs_describe_feedback_polling_without_stopping_loop
+run_test "loop retake refreshes feedback doc paths" test_loop_retake_refreshes_feedback_doc_paths
 run_test "supersede flow uses two-arg completed destination helper" test_supersede_flow_uses_two_arg_completed_destination_helper
 run_test "new take requires target branch refresh" test_new_take_requires_target_branch_refresh
 run_test "new take starts from target branch" test_new_take_starts_from_target_branch_even_when_invoked_from_feature_branch

@@ -22,6 +22,9 @@ Requirements:
 - Existing PR for this take: {{PR_URL}}
 - Current PR title: {{PR_TITLE}}
 - Current PR body on the remote PR is authoritative. The plan may contain only a cache of that body.
+- User feedback doc for this take: {{USER_FEEDBACK_DOC}}
+- Builder response doc for this take: {{BUILDER_RESPONSE_DOC}}
+- Use {{FEEDBACK_HELPER_PATH}} for all live-feedback reads/writes. Do not edit feedback docs directly.
 - If you are resuming an existing ExecPlan, keep working from that plan unless the caller explicitly instructs otherwise.
 - If you are starting a new take without an existing plan, follow the new-plan lifecycle.
 {{PLAN_BOOTSTRAP_INSTRUCTIONS}}
@@ -34,6 +37,10 @@ Requirements:
 - Do not run git commit or git push. The loop script owns checkpoint/finalization commits and pushes around builder/reviewer lifecycle transitions.
 - Keep unrelated baseline untracked files untouched.
 - Non-ignored files you create are treated as intended outputs and will be committed by the loop. If a temporary/build/log artifact should not be committed, make sure it is ignored.
+- If {{USER_FEEDBACK_DOC}} exists, read it at the start of work, before each hook execution, after each hook failure before retrying, and immediately before returning success.
+- Before returning success, every feedback item in {{USER_FEEDBACK_DOC}} must have a response in {{BUILDER_RESPONSE_DOC}} recorded via {{FEEDBACK_HELPER_PATH}} respond.
+- Use status=implemented when you accepted the feedback and updated code/plan accordingly.
+- Use status=question or status=objection when you need to challenge or clarify the feedback. Record the English explanation via {{FEEDBACK_HELPER_PATH}} respond and do not make the requested code change for that feedback item in the same step.
 - Try up to 3 implementation attempts before declaring failure.
 - Return exactly one JSON object and nothing else:
   {"result":"success|failed_after_3_retries","comment":"<english hook-summary-or-failure-reason>"}

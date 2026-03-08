@@ -51,6 +51,12 @@ resolve_current_branch() {
   printf '%s\n' "$branch"
 }
 
+refresh_feedback_doc_paths() {
+  [[ -n "${EXPECTED_PLAN_DOC_FILENAME:-}" ]] || die "cannot refresh feedback doc paths without EXPECTED_PLAN_DOC_FILENAME"
+  USER_FEEDBACK_DOC="$(user_feedback_rel_path_for_plan "$EXPECTED_PLAN_DOC_FILENAME")"
+  BUILDER_RESPONSE_DOC="$(builder_response_rel_path_for_plan "$EXPECTED_PLAN_DOC_FILENAME")"
+}
+
 normalize_pr_url() {
   local pr_url="$1"
   printf '%s\n' "$pr_url" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s:/+$::'

@@ -16,6 +16,7 @@ All paths are relative to this SKILL.md file's location.
 - `scripts/run_builder_reviewer_doctor.sh`
 - `scripts/run_builder_reviewer_loop.sh`
 - `scripts/execplan_gate.sh`
+- `scripts/execplan_user_feedback.sh`
 
 ## Input resolution
 
@@ -63,6 +64,9 @@ The skill accepts optional `target-branch` input for new takes.
 5. The reviewer payload remains:
    - `{"pr_url":"<pr-url>","comment_body":"<english text>","approve_merge":true|false}`
 6. Do not stop the loop without explicit user instruction. If the loop script exits on its own, report the outcome and ask whether to continue.
+7. If the user sends follow-up instructions while the loop is running, translate them to English, decompose them into independent items, and write them only through `scripts/execplan_user_feedback.sh submit --plan <plan_md> --item <english_text>`.
+8. While the loop is running, poll `scripts/execplan_user_feedback.sh status --plan <plan_md> --format json`. If the builder has appended new `question` or `objection` responses, forward them to the user as intermediate output without ending the caller agent turn or stopping the loop.
+9. Do not write to `eternal-cycler-out/builder-response/`; treat it as builder-owned read-only state. See `PLANS.md` for the full feedback contract.
 
 ## Suggested invocations
 
