@@ -47,7 +47,6 @@ start_branch="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_start_branch")")
 start_commit="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_start_commit")")"
 branch_slug="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_branch_slug")")"
 take="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_take")")"
-existing_target_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_target_pr_url")")"
 existing_supersedes_plan="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_supersedes_plan")")"
 existing_supersedes_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_supersedes_pr_url")")"
 
@@ -122,10 +121,6 @@ ${EXECPLAN_METADATA_START}
 - execplan_take: ${take}
 EOF_META
 )
-if [[ -n "$existing_target_pr_url" ]]; then
-  metadata_block+=$'\n'
-  metadata_block+="- execplan_target_pr_url: ${existing_target_pr_url}"
-fi
 if [[ -n "$existing_supersedes_plan" ]]; then
   metadata_block+=$'\n'
   metadata_block+="- execplan_supersedes_plan: ${existing_supersedes_plan}"

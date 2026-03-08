@@ -38,7 +38,7 @@ If all checks pass, the returned payload must explicitly state that outcome and 
 
 **Path note:** Gate script path is relative to the eternal-cycler installation root (shown in "Path context" in your prompt). Hook and plan paths are relative to the consuming repository root.
 
-Use repository-local hooks under `.agents/skills/execplan-hook-*/`. Resolve the hook directory from the event ID by taking the portion after the first `.`, replacing `_` and `.` with `-`, and prefixing `execplan-hook-`. Use the gate script under `scripts/` to decide concrete commands and checks.
+Use repository-local hooks under `.agents/skills/execplan-hook-*/`. Follow the hook naming/path rules in `PLANS.md` as the single source of truth. Use the gate script under `scripts/` to decide concrete commands and checks.
 
 ## Review cycle
 

@@ -53,10 +53,25 @@ EOF_STUB
   run_loop_capture \
     "$repo" \
     --task "resume task" \
+    --target-branch main \
     --resume-plan "$plan_rel"
 
   [[ "$LOOP_RC" -ne 0 ]] || return 1
   [[ "$LOOP_OUTPUT" == *"branch not found locally or on origin: missing-target"* ]]
+}
+
+test_loop_rejects_legacy_pr_url_resume_entrypoint() {
+  local repo
+
+  repo="$(setup_fixture_repo)" || return 1
+
+  run_loop_capture \
+    "$repo" \
+    --task "resume task" \
+    --pr-url "https://github.com/example/repo/pull/42"
+
+  [[ "$LOOP_RC" -ne 0 ]] || return 1
+  [[ "$LOOP_OUTPUT" == *"unknown argument: --pr-url"* ]]
 }
 
 test_loop_accepts_resume_only_plan_for_post_completion() {

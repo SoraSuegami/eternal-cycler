@@ -87,7 +87,6 @@ creation_commit="$(git rev-parse HEAD)"
   exit 1
 }
 
-existing_target_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_target_pr_url")")"
 existing_supersedes_plan="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_supersedes_plan")")"
 existing_supersedes_pr_url="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_supersedes_pr_url")")"
 branch_slug="$(trim_line "$(read_plan_scalar "$PLAN" "execplan_branch_slug")")"
@@ -131,10 +130,6 @@ ${EXECPLAN_METADATA_START}
 EOF_META
 )
 
-if [[ -n "$existing_target_pr_url" ]]; then
-  metadata_block+=$'\n'
-  metadata_block+="- execplan_target_pr_url: ${existing_target_pr_url}"
-fi
 if [[ -n "$existing_supersedes_plan" ]]; then
   metadata_block+=$'\n'
   metadata_block+="- execplan_supersedes_plan: ${existing_supersedes_plan}"

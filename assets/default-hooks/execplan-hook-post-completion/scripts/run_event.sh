@@ -59,10 +59,6 @@ ledger_lines() {
     sed -n '/<!-- hook-ledger:start -->/,/<!-- hook-ledger:end -->/p' "$PLAN"
     return 0
   fi
-  if rg -q "<!-- verification-ledger:start -->" "$PLAN"; then
-    sed -n '/<!-- verification-ledger:start -->/,/<!-- verification-ledger:end -->/p' "$PLAN"
-    return 0
-  fi
   return 1
 }
 

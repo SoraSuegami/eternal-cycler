@@ -9,11 +9,10 @@ Usage:
 Options:
   --task <text>                      Optional builder task text.
   --task-file <path>                 Optional builder task file path.
-  --target-branch <branch>           Required for new takes; optional for resume.
+  --target-branch <branch>           Required for new takes; ignored for resume.
   --pr-title <text>                  Required for new takes only.
   --pr-body <markdown>               Required for new takes only.
   --resume-plan <path>               Canonical resume entrypoint for an active plan.
-  --pr-url <url>                     Legacy resume entrypoint. Prefer --resume-plan.
   --max-iterations <n>               Max review iterations (default: 20).
   --max-reviewer-failures <n>        Max consecutive reviewer-phase failures (default: 3).
   --model-builder <model>            Optional model for builder codex runs.
@@ -377,9 +376,9 @@ validate_existing_pr_context() {
   [[ -n "$CURRENT_PR_HEAD" ]] || die "failed to resolve PR head branch from: $pr_url"
   [[ -n "$CURRENT_PR_BASE" ]] || die "failed to resolve PR base branch from: $pr_url"
   [[ "$CURRENT_PR_STATE" == "OPEN" ]] || die "resume requires an OPEN PR: $pr_url"
-  [[ "$CURRENT_PR_HEAD" == "$CURRENT_WORK_BRANCH" ]] || die "--pr-url head branch ($CURRENT_PR_HEAD) must match current local branch ($CURRENT_WORK_BRANCH)"
+  [[ "$CURRENT_PR_HEAD" == "$CURRENT_WORK_BRANCH" ]] || die "resume PR head branch ($CURRENT_PR_HEAD) must match current local branch ($CURRENT_WORK_BRANCH)"
   if [[ -n "$TARGET_BASE_BRANCH" ]]; then
-    [[ "$CURRENT_PR_BASE" == "$TARGET_BASE_BRANCH" ]] || die "--pr-url base branch ($CURRENT_PR_BASE) must match --target-branch ($TARGET_BASE_BRANCH)"
+    [[ "$CURRENT_PR_BASE" == "$TARGET_BASE_BRANCH" ]] || die "resume PR base branch ($CURRENT_PR_BASE) must match plan target branch ($TARGET_BASE_BRANCH)"
   else
     TARGET_BASE_BRANCH="$CURRENT_PR_BASE"
   fi
@@ -911,11 +910,10 @@ ${plan_bootstrap_instructions}
 ${plan_filename_instructions}
 ${resume_plan_instructions}
 - If you create a new ExecPlan in this run, include execplan_target_branch: ${TARGET_BASE_BRANCH}, execplan_branch_slug: ${CURRENT_BRANCH_SLUG}, and execplan_take: ${CURRENT_TAKE} in the plan metadata.
-- If the caller preamble specifies execplan_target_pr_url or other optional metadata, preserve it in the plan.
 - Keep the plan in eternal-cycler-out/plans/active/ until execplan.post-completion passes through the gate. Do not move the file to completed/ manually.
 - Before returning success, execplan.post-completion must have a recorded pass entry in the completed plan ledger, and execplan.post-creation must have a recorded pass entry for a new take or execplan.resume must have a recorded pass entry for a resumed take.
 - If execplan.post-completion or any required hook fails, revise the plan/work and retry within the same builder session. Use failed_after_3_retries only after three full attempts fail.
-- Do not run git commit or git push. The loop script only verifies the completed plan and then performs one final commit/push.
+- Do not run git commit or git push. The loop script owns checkpoint/finalization commits and pushes around builder/reviewer lifecycle transitions.
 - Keep unrelated baseline untracked files untouched.
 - Non-ignored files you create are treated as intended outputs and will be committed by the loop. If a temporary/build/log artifact should not be committed, make sure it is ignored.
 - Try up to 3 implementation attempts before declaring failure.
@@ -968,7 +966,7 @@ Requirements:
 - Before returning success, execplan.post-creation and execplan.post-completion must both have recorded pass entries in the completed plan ledger.
 - If execplan.post-completion or any required hook fails, revise the plan/work and retry within the same builder session. Use failed_after_3_retries only after three full attempts fail.
 - Work only on branch: ${CURRENT_WORK_BRANCH}
-- Do not run git commit or git push. The loop script only verifies the completed plan and then performs one final commit/push.
+- Do not run git commit or git push. The loop script owns checkpoint/finalization commits and pushes around builder/reviewer lifecycle transitions.
 - Keep unrelated baseline untracked files untouched.
 - Non-ignored files you create are treated as intended outputs and will be committed by the loop. If a temporary/build/log artifact should not be committed, make sure it is ignored.
 - Try up to 3 implementation attempts before declaring failure.
@@ -994,7 +992,7 @@ Review target:
 
 - Do not post any GitHub comment directly in autonomous loop mode.
 - Return exactly one JSON object and nothing else:
-  {"pr_url":"<target-pr-url>","comment_body":"<comment body in English>","approve_merge":true|false}
+  {"pr_url":"<pr-url>","comment_body":"<comment body in English>","approve_merge":true|false}
 - Set pr_url to the same PR URL shown above.
 - If CI is running, do not wait for completion; decide from current evidence.
 - If the latest plan in this PR appears unresolved after three failures, include explicit remediation request text in comment_body.
@@ -1073,11 +1071,6 @@ while [[ $# -gt 0 ]]; do
       INITIAL_PR_WAS_PROVIDED=1
       shift 2
       ;;
-    --pr-url)
-      PR_URL="${2:-}"
-      INITIAL_PR_WAS_PROVIDED=1
-      shift 2
-      ;;
     --max-iterations)
       MAX_ITERATIONS="${2:-}"
       shift 2
@@ -1113,17 +1106,13 @@ if [[ -n "$TASK_FILE" ]]; then
   TASK_TEXT="$(cat "$TASK_FILE")"
 fi
 
-if [[ -z "$TASK_TEXT" && -z "$RESUME_PLAN" && -z "$PR_URL" ]]; then
+if [[ -z "$TASK_TEXT" && -z "$RESUME_PLAN" ]]; then
   echo "either --task or --task-file is required" >&2
   usage >&2
   exit 2
 fi
 
-if [[ -n "$RESUME_PLAN" && -n "$PR_URL" ]]; then
-  die "--resume-plan and --pr-url are mutually exclusive"
-fi
-
-if [[ -z "$RESUME_PLAN" && -z "$PR_URL" ]]; then
+if [[ -z "$RESUME_PLAN" ]]; then
   [[ -n "$TARGET_BASE_BRANCH" ]] || die "--target-branch is required for new takes"
   [[ -n "$PR_TITLE" ]] || die "--pr-title is required for new takes"
   [[ -n "$PR_BODY" ]] || die "--pr-body is required for new takes"
@@ -1150,7 +1139,7 @@ PATH_CONTEXT="Path context (all paths are from the repository root):
 - Outside-sandbox rules: .codex/rules/eternal-cycler.rules
 - ExecPlan gate:         ${SUBMODULE_REL}/scripts/execplan_gate.sh
 - ExecPlan hooks:        .agents/skills/execplan-hook-*/  (copied from ${SUBMODULE_REL}/assets/default-hooks/ by setup.sh)
-- Hook naming rule:      only execplan.* and hook.* are valid; event IDs must use dash-form names (no underscores). Strip the namespace, replace '.' with '-', then prefix execplan-hook- (for example execplan.post-creation -> execplan-hook-post-creation, hook.docs-only -> execplan-hook-docs-only)
+- Hook naming/path rules: see ${SUBMODULE_REL}/PLANS.md (single source of truth)
 - Plans dir:             eternal-cycler-out/plans/
 - ExecPlan metadata:     use the execplan-metadata and execplan-pr-body marker blocks inside the plan file
 Paths to policy docs and gate script are relative to ${SUBMODULE_REL}/. Paths to hooks and plans are relative to the repository root."
@@ -1180,11 +1169,14 @@ if [[ -n "$RESUME_PLAN" ]]; then
 
   resume_start_branch="$(trim_line "$(read_plan_scalar "$(plan_abs_path "$WORKDIR" "$EXPECTED_PLAN_DOC_FILENAME")" "execplan_start_branch")")"
   PR_URL="$(trim_line "$(read_plan_scalar "$(plan_abs_path "$WORKDIR" "$EXPECTED_PLAN_DOC_FILENAME")" "execplan_pr_url")")"
-  if [[ -z "$TARGET_BASE_BRANCH" ]]; then
-    TARGET_BASE_BRANCH="$(trim_line "$(read_plan_scalar "$(plan_abs_path "$WORKDIR" "$EXPECTED_PLAN_DOC_FILENAME")" "execplan_target_branch")")"
+  plan_target_branch="$(trim_line "$(read_plan_scalar "$(plan_abs_path "$WORKDIR" "$EXPECTED_PLAN_DOC_FILENAME")" "execplan_target_branch")")"
+  if [[ -n "$TARGET_BASE_BRANCH" && "$TARGET_BASE_BRANCH" != "$plan_target_branch" ]]; then
+    log "ignoring explicit --target-branch=${TARGET_BASE_BRANCH} for resume; using plan target branch ${plan_target_branch}"
   fi
+  TARGET_BASE_BRANCH="$plan_target_branch"
   [[ -n "$resume_start_branch" ]] || die "resume plan is missing execplan_start_branch: $EXPECTED_PLAN_DOC_FILENAME"
   [[ -n "$PR_URL" ]] || die "resume plan is missing execplan_pr_url: $EXPECTED_PLAN_DOC_FILENAME"
+  [[ -n "$TARGET_BASE_BRANCH" ]] || die "resume plan is missing execplan_target_branch: $EXPECTED_PLAN_DOC_FILENAME"
   if [[ -z "$TASK_TEXT" ]]; then
     TASK_TEXT="Resume the ExecPlan at ${EXPECTED_PLAN_DOC_FILENAME}. Read it in full, update the living document if needed for the current state, then execute all incomplete actions."
   fi
@@ -1194,19 +1186,6 @@ if [[ -n "$RESUME_PLAN" ]]; then
   CURRENT_WORK_BRANCH="$resume_start_branch"
   run_command_or_die "failed to pull resume branch origin/${CURRENT_WORK_BRANCH}" git pull --ff-only origin "$CURRENT_WORK_BRANCH"
   validate_existing_pr_context "$PR_URL"
-  ensure_resume_gate_for_current_head "$EXPECTED_PLAN_DOC_FILENAME"
-  "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" --pr-url "$PR_URL" >/dev/null
-  load_plan_runtime_metadata "$EXPECTED_PLAN_DOC_FILENAME"
-elif [[ -n "$PR_URL" ]]; then
-  EXPECTED_PLAN_DOC_FILENAME="$(plan_rel_path_for_branch "$CURRENT_WORK_BRANCH")"
-  [[ -f "$(plan_abs_path "$WORKDIR" "$EXPECTED_PLAN_DOC_FILENAME")" ]] || die "resume requires the fixed plan document path to exist: $EXPECTED_PLAN_DOC_FILENAME"
-  if [[ -z "$TASK_TEXT" ]]; then
-    TASK_TEXT="Resume the ExecPlan at ${EXPECTED_PLAN_DOC_FILENAME}. Read it in full, update the living document if needed for the current state, then execute all incomplete actions."
-  fi
-  validate_existing_pr_context "$PR_URL"
-  refresh_target_branch_or_die "$TARGET_BASE_BRANCH"
-  switch_or_track_branch "$CURRENT_WORK_BRANCH"
-  run_command_or_die "failed to pull resume branch origin/${CURRENT_WORK_BRANCH}" git pull --ff-only origin "$CURRENT_WORK_BRANCH"
   ensure_resume_gate_for_current_head "$EXPECTED_PLAN_DOC_FILENAME"
   "$SCRIPT_DIR/run_builder_reviewer_doctor.sh" --pr-url "$PR_URL" >/dev/null
   load_plan_runtime_metadata "$EXPECTED_PLAN_DOC_FILENAME"

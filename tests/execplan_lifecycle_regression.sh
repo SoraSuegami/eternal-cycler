@@ -39,6 +39,7 @@ run_test "loop force closes failed builder plan" test_loop_force_closes_failed_b
 run_test "loop accepts resume-only plan for post completion" test_loop_accepts_resume_only_plan_for_post_completion
 run_test "loop rejects active plan missing post creation or resume pass" test_loop_rejects_active_plan_missing_post_creation_or_resume_pass
 run_test "resume plan requires target branch refresh" test_resume_plan_requires_target_branch_refresh
+run_test "loop rejects legacy pr-url resume entrypoint" test_loop_rejects_legacy_pr_url_resume_entrypoint
 run_test "resume loop invokes execplan.resume gate when missing" test_resume_loop_invokes_resume_gate_when_missing
 run_test "resume loop skips duplicate execplan.resume gate" test_resume_loop_skips_duplicate_resume_gate
 

@@ -298,16 +298,10 @@ sanitize() {
 LEDGER_HEADING="## Hook Ledger"
 LEDGER_START_MARKER="<!-- hook-ledger:start -->"
 LEDGER_END_MARKER="<!-- hook-ledger:end -->"
-LEGACY_LEDGER_START_MARKER="<!-- verification-ledger:start -->"
-LEGACY_LEDGER_END_MARKER="<!-- verification-ledger:end -->"
 
 current_ledger_start_marker() {
   if rg -q "$LEDGER_START_MARKER" "$PLAN"; then
     printf '%s\n' "$LEDGER_START_MARKER"
-    return 0
-  fi
-  if rg -q "$LEGACY_LEDGER_START_MARKER" "$PLAN"; then
-    printf '%s\n' "$LEGACY_LEDGER_START_MARKER"
     return 0
   fi
   return 1
@@ -316,10 +310,6 @@ current_ledger_start_marker() {
 current_ledger_end_marker() {
   if rg -q "$LEDGER_END_MARKER" "$PLAN"; then
     printf '%s\n' "$LEDGER_END_MARKER"
-    return 0
-  fi
-  if rg -q "$LEGACY_LEDGER_END_MARKER" "$PLAN"; then
-    printf '%s\n' "$LEGACY_LEDGER_END_MARKER"
     return 0
   fi
   return 1

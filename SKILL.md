@@ -19,16 +19,11 @@ All paths are relative to this SKILL.md file's location.
 
 ## Input resolution
 
-The skill accepts optional `target-branch` and `target-pr-url` inputs.
+The skill accepts optional `target-branch` input for new takes.
 
 - `target-branch` means the branch that the current take's PR should merge into.
-- `target-pr-url` means the PR whose **base branch** should be used as the target branch.
-- If both are provided, they must resolve to the same branch or the skill must stop with an error.
-- If neither is provided, use `main`.
-
-If `target-pr-url` is provided, resolve it with:
-
-`gh pr view <url> --json baseRefName --jq '.baseRefName'`
+- If it is omitted for a new take, use `main`.
+- Resume ignores direct target-branch input and uses the branch recorded in the selected plan.
 
 ## Phase 0: Plan selection
 
@@ -42,17 +37,17 @@ If `target-pr-url` is provided, resolve it with:
 
 1. Read the selected plan in full.
 2. If `execplan_pr_url` is missing or empty, stop. Resume requires an existing PR.
-3. Resolve the requested target branch from user input only if the user explicitly supplied `target-branch` or `target-pr-url`.
+3. Do not resolve or override the target branch from user input during resume. The selected plan's recorded `execplan_target_branch` is authoritative.
 4. If the user supplied task text or a task file, pass it through to the loop.
 5. Invoke the loop with the selected plan:
-   - `scripts/run_builder_reviewer_loop.sh --resume-plan <plan_md> [--task-file <task_md> | --task <text>] [--target-branch <branch>]`
+   - `scripts/run_builder_reviewer_loop.sh --resume-plan <plan_md> [--task-file <task_md> | --task <text>]`
 6. Do not manually run doctor, `execplan.resume`, or branch switching commands beforehand. The loop owns those mechanical steps, including refreshing the target branch before switching back to the plan branch.
 7. The builder will read the resumed plan, update the living document if needed, and continue execution inside the loop.
 
 ## New plan flow
 
 1. Resolve the user task. If neither task text nor task file is provided, stop and ask. Do not invent a fallback task.
-2. Resolve the target branch from `target-branch`, `target-pr-url`, or default `main`.
+2. Resolve the target branch from `target-branch` or default `main`.
 3. Create an English PR title and body that summarize the requested work. These are loop inputs, not builder JSON outputs.
 4. Invoke the loop directly:
    - `scripts/run_builder_reviewer_loop.sh --task-file <task_md> --target-branch <target_branch> --pr-title <english_title> --pr-body <english_body>`
@@ -66,7 +61,7 @@ If `target-pr-url` is provided, resolve it with:
 4. The only structured builder payload that matters is:
    - `{"result":"success|failed_after_3_retries","comment":"<english text>"}`
 5. The reviewer payload remains:
-   - `{"pr_url":"<target-pr-url>","comment_body":"<english text>","approve_merge":true|false}`
+   - `{"pr_url":"<pr-url>","comment_body":"<english text>","approve_merge":true|false}`
 6. Do not stop the loop without explicit user instruction. If the loop script exits on its own, report the outcome and ask whether to continue.
 
 ## Suggested invocations

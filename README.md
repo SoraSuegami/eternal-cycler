@@ -99,7 +99,6 @@ Each ExecPlan caches its own runtime metadata in the plan file:
 - `execplan_pr_title`
 - `execplan_branch_slug`
 - `execplan_take`
-- optional `execplan_target_pr_url`
 - optional `execplan_supersedes_plan`
 - optional `execplan_supersedes_pr_url`
 
@@ -114,10 +113,11 @@ The remote GitHub PR is authoritative for PR URL, title, body, and head/base sta
 
 The preferred entrypoint is the skill in `SKILL.md`, which handles:
 
-- target branch resolution from `target-branch` or `target-pr-url`
+- target branch resolution from `target-branch` or default `main` for new takes
 - active plan selection
 - direct loop invocation
 - target-branch refresh before starting a new take or resuming a plan
+- using the selected plan's recorded target branch as authoritative during resume
 
 You can also invoke the loop directly.
 
@@ -163,7 +163,7 @@ bash .agents/skills/eternal-cycler/setup.sh
 The gate script resolves hook scripts from `.agents/skills/` in your repository.
 
 1. Pick an event ID such as `hook.your-event`.
-2. Derive the hook directory name from the portion after the first `.` by replacing `.` with `-`. Use dash-form event IDs only; underscore aliases are not supported.
+2. Follow the hook naming/path rules in `PLANS.md` as the single source of truth.
 3. Create `.agents/skills/execplan-hook-your-event/` with a `scripts/run_event.sh` that emits `STATUS=pass` or `STATUS=fail`.
 4. Reference that event ID in an ExecPlan `Progress` action’s `hook_events`.
 

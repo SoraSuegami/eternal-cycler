@@ -100,7 +100,6 @@ Required scalar metadata:
 
 Optional scalar metadata:
 
-* `execplan_target_pr_url`
 * `execplan_supersedes_plan`
 * `execplan_supersedes_pr_url`
 
@@ -211,14 +210,14 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 7. **Finalize plan** after all actions pass:
    * update all living-document sections (`Progress`, `Surprises & Discoveries`, `Decision Log`, `Outcomes & Retrospective`)
    * note which hook scripts were referenced, created, modified, or left unchanged, and why
-   * ensure all implementation changes are ready to be committed and pushed; in loop-managed execution, the single commit/push happens only after the builder has already completed `execplan.post-completion` successfully and the loop has verified the resulting completed plan
+   * ensure all implementation changes are ready to be committed and pushed; in loop-managed execution, the loop owns checkpoint/finalization commits and pushes after successful builder cycles and may add extra docs-only commits when force-closing failed takes or superseding reviewer-rejected takes
    * treat non-ignored files created during execution as intended outputs; if a temporary/build/log artifact should not be committed, ignore it before lifecycle completion
    * add tech-debt follow-up plans if needed
 8. **Post-completion gate** — run out-of-sandbox:
    * `scripts/execplan_gate.sh --plan <active_plan_md> --event execplan.post-completion`
    * `execplan.post-completion` is validation-only: no `git add`, `git commit`, or `git push`
    * In loop-managed execution, the builder runs this gate and must not return success until the completed plan contains the resulting pass entry.
-   * On pass: the gate appends the pass ledger entry and moves the plan to `eternal-cycler-out/plans/completed/`; the loop then verifies that completed plan and performs one final commit/push without invoking any further builder edits.
+   * On pass: the gate appends the pass ledger entry and moves the plan to `eternal-cycler-out/plans/completed/`; the loop then verifies that completed plan and continues with its normal checkpoint/finalization commit/push behavior without invoking any further builder edits.
    * On failure: the plan stays in `eternal-cycler-out/plans/active/` for revision and retry.
    * On escalation: same as step 6 — document failure, move the plan to `eternal-cycler-out/plans/completed/` as failed, and stop.
    * Lifecycle complete.
@@ -228,7 +227,7 @@ Two paths depending on whether you are starting a new plan or resuming an existi
 1. **Select plan** from `eternal-cycler-out/plans/active/`. If there is operator feedback, pass it to the loop/builder; do not require manual plan editing before resume.
 2. **Resume gate** — run out-of-sandbox:
    `scripts/execplan_gate.sh --plan <plan_md> --event execplan.resume`
-   In loop-managed execution, the loop first refreshes the target branch named in the plan with `git pull --ff-only origin <target-branch>`, then switches back to the plan's recorded start branch before running this gate. If target-branch refresh or branch switching fails, stop and report the git error to the operator. The resume gate validates that the current branch matches the plan's recorded start branch and that the branch's PR is still `OPEN`, refreshes the inline ExecPlan metadata / PR body blocks from that open PR, and appends a resume record to the plan.
+   In loop-managed execution, the loop always treats the target branch recorded in the plan as authoritative. It first refreshes that plan-recorded target branch with `git pull --ff-only origin <target-branch>`, then switches back to the plan's recorded start branch before running this gate. Any direct resume-time target-branch input must be ignored. If target-branch refresh or branch switching fails, stop and report the git error to the operator. The resume gate validates that the current branch matches the plan's recorded start branch and that the branch's PR is still `OPEN`, refreshes the inline ExecPlan metadata / PR body blocks from that open PR, and appends a resume record to the plan.
 3. Continue from step 3 of the new-plan path (execute actions, verify, finalize, post-completion gate).
 
 ## Skeleton of a Good ExecPlan
